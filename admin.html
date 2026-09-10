@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="焦大师专闲置好物平台管理后台">
+  <title>管理后台｜焦大师专闲置好物平台</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/admin.css">
+</head>
+<body>
+  <div class="admin-login-page" id="loginView">
+    <form class="admin-login-card" id="adminPageLoginForm">
+      <a class="logo login-logo" href="index.html"><span class="logo-icon">🌱</span><span>焦大师专闲置好物平台</span></a>
+      <h1>管理员后台</h1><p class="hint">请输入已授权的管理员账号。</p>
+      <div class="field-group"><label class="label" for="pageAdminEmail">管理员邮箱</label><input class="field" id="pageAdminEmail" type="email" required autocomplete="username"></div>
+      <div class="field-group"><label class="label" for="pageAdminPassword">密码</label><input class="field" id="pageAdminPassword" type="password" minlength="6" required autocomplete="current-password"></div>
+      <div class="error" id="pageLoginError"></div><button class="submit" id="pageLoginSubmit" type="submit">登录后台</button>
+      <a class="back-link" href="index.html">← 返回前台</a>
+    </form>
+  </div>
+
+  <div class="admin-shell" id="adminShell" hidden>
+    <header class="admin-topbar"><a class="logo" href="index.html" aria-label="返回前台"><span class="logo-icon">🌱</span></a><div class="admin-top-actions"><a class="btn btn-ghost" href="index.html">返回前台 / 发布商品</a><button class="icon-btn" id="adminThemeButton" title="切换主题">🌙</button><span class="admin-account" id="adminAccount"></span><button class="btn btn-danger btn-small" id="adminPageLogout">退出</button></div></header>
+    <div class="admin-layout">
+      <aside class="admin-sidebar"><button class="side-tab active" data-view="overview">📊 数据概览</button><button class="side-tab" data-view="products">📦 商品管理</button><button class="side-tab" data-view="reservations">🤝 想要记录</button><button class="side-tab" data-view="codes">🔢 对接码查询</button><button class="side-tab" data-view="resources">🖼️ 资源占用</button><button class="side-tab" data-view="categories">🏷️ 分类管理</button><button class="side-tab" data-view="admins">🛡️ 管理员管理</button></aside>
+      <main class="admin-main"><div class="admin-page-head"><div><h1 id="viewTitle">数据概览</h1><p id="viewDescription">查看平台实时运营数据</p></div><div class="admin-query"><input class="field" id="adminSearch" type="search" placeholder="查询当前页面…"><button class="btn btn-primary" id="adminSearchButton">查询</button></div></div><div id="adminPageContent"><div class="loading show">正在加载后台数据…</div></div></main>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="adminProductModal">
+    <section class="modal wide" role="dialog" aria-modal="true" aria-labelledby="adminProductTitle">
+      <div class="modal-head"><h3 class="modal-title" id="adminProductTitle">编辑商品</h3><button class="close-btn" id="adminProductClose" type="button">×</button></div>
+      <div class="modal-body">
+        <form id="adminProductForm">
+          <div class="product-code-note">商品码：<strong id="editProductCode">00000</strong>（永久只读）</div>
+          <div class="field-group"><label class="label" for="editProductTitle">商品标题</label><input class="field" id="editProductTitle" maxlength="120" required></div>
+          <div class="field-group"><label class="label" for="editProductDescription">详细描述（可选）</label><textarea class="field" id="editProductDescription" maxlength="3000"></textarea></div>
+          <div class="field-row">
+            <div class="field-group"><label class="label" for="editProductPrice">价格（元）</label><input class="field" id="editProductPrice" type="number" min="0" max="99999999" step="0.01" required></div>
+            <div class="field-group"><label class="label" for="editProductCondition">成色</label><select class="field" id="editProductCondition" required><option>全新</option><option>几乎全新</option><option>轻微使用痕迹</option><option>明显使用痕迹</option></select></div>
+          </div>
+          <div class="field-row">
+            <div class="field-group"><label class="label" for="editProductCategory">分类</label><select class="field" id="editProductCategory" required></select></div>
+            <div class="field-group"><label class="label" for="editProductStatus">商品状态</label><select class="field" id="editProductStatus" required><option value="available">在售</option><option value="sold">已售罄</option><option value="removed">已下架</option></select></div>
+          </div>
+          <div class="field-row">
+            <div class="field-group"><label class="label" for="editProductQuantity">商品总数量</label><input class="field" id="editProductQuantity" type="number" min="1" max="9999" required></div>
+            <div class="field-group"><label class="label" for="editProductSoldQuantity">已售数量</label><input class="field" id="editProductSoldQuantity" type="number" min="0" max="9999" required></div>
+          </div>
+          <div class="field-group"><label class="label" for="editSellerContact">卖家微信（仅管理员可见）</label><input class="field" id="editSellerContact" maxlength="120"></div>
+          <div class="field-group"><label class="label" for="editProductImageUrl">图片 URL（可选）</label><input class="field" id="editProductImageUrl" type="url" placeholder="https://example.com/image.jpg"><div class="hint">保留原地址即可不更换图片；外部 URL 会直接引用。</div></div>
+          <div class="field-group"><label class="label" for="editProductImageFile">上传新图片（可选）</label><input class="field" id="editProductImageFile" type="file" accept="image/*"><div class="hint" id="editProductImageHint">本地图片会转为 WebP 并压缩至约 150KB 以内。</div></div>
+          <div class="error" id="editProductError"></div><button class="submit" id="editProductSubmit" type="submit">保存商品修改</button>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="adminConfirmModal"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><h3 class="modal-title" id="adminConfirmTitle">请再次确认</h3><button class="close-btn" id="adminConfirmClose">×</button></div><div class="modal-body"><p class="confirm-copy" id="adminConfirmText"></p><div class="reserve-actions"><button class="btn btn-ghost" id="adminConfirmCancel">取消</button><button class="btn btn-danger" id="adminConfirmAction">确认执行</button></div></div></section></div>
+  <div class="toast" id="toast"><span class="toast-icon" id="toastIcon">✓</span><span id="toastText"></span></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0"></script>
+  <script src="assets/js/admin.js"></script>
+</body>
+</html>

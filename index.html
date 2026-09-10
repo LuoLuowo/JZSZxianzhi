@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="焦大师专闲置好物平台">
+  <title>焦大师专闲置好物平台</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <div class="notice" id="notice"></div>
+  <header class="header">
+    <div class="header-inner">
+      <a class="logo" href="#" id="homeLink" aria-label="返回首页"><span class="logo-icon">🌱</span></a>
+      <div class="nav-search">
+        <input id="navSearch" type="search" placeholder="搜索闲置好物…" aria-label="搜索商品">
+        <button id="navSearchButton" aria-label="搜索">⌕</button>
+      </div>
+      <div class="nav-actions">
+        <button class="icon-btn" id="themeButton" aria-label="切换主题">🌙</button>
+        <button class="icon-btn" id="adminButton" aria-label="管理员后台" title="管理员后台">🛡️</button>
+        <div class="admin-session" id="adminSession" hidden>
+          <button class="admin-chip" id="adminChip"><span class="online-dot"></span><span class="admin-label">管理员</span><span>⌄</span></button>
+          <div class="admin-menu"><button class="menu-item" id="openAdminPanel">管理后台</button><button class="menu-item danger" id="logoutButton">退出后台</button></div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="announcement-bar" id="announcementBar" hidden><span class="announcement-icon">📢</span><div class="announcement-window"><div class="announcement-track" id="announcementText"></div></div></div>
+
+  <section class="hero">
+    <div class="hero-actions"><button class="hero-link" id="groupButton" type="button">💬 好物群</button></div>
+    <h1 class="hero-title">焦大师专闲置好物平台</h1>
+    <p class="hero-subtitle">校内二手闲置交换，教材、数码、生活好物，轻松找到下一位主人。</p>
+    <div class="main-search"><input id="mainSearch" type="search" placeholder="搜索标题或商品描述…"><button id="mainSearchButton">搜索</button></div>
+  </section>
+
+  <div class="modal-backdrop" id="groupQrModal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="groupQrTitle"><div class="modal-head"><h3 class="modal-title" id="groupQrTitle">焦大师专闲置好物群</h3><button class="close-btn" data-close="groupQrModal">×</button></div><div class="modal-body group-qr-body"><img id="groupQrImage" alt="好物群二维码"><p>添加好物群了解更多</p></div></section></div>
+
+  <div class="modal-backdrop" id="connectionModal">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="connectionTitle">
+      <div class="modal-head"><h3 class="modal-title" id="connectionTitle">想要已登记</h3><button class="close-btn" data-close="connectionModal">×</button></div>
+      <div class="modal-body"><p class="connection-tip">添加卖方管理微信发送对接码沟通交易！</p><div class="connection-info"><div><span>对接码</span><strong id="connectionCode">00000</strong></div><button class="btn btn-primary" id="copyConnectionCode" type="button">点击复制</button></div><div class="connection-admin">卖方管理微信：<strong id="adminWechatText">暂未设置</strong></div></div>
+    </section>
+  </div>
+
+  <nav class="categories" aria-label="闲置分类"><div class="category-list" id="categoryList"><button class="category-tag active" data-category="all">全部</button></div></nav>
+
+  <main class="main">
+    <div class="section-head"><h2 class="section-title">最新闲置</h2><span class="result-count" id="resultCount">正在加载…</span></div>
+    <div class="loading show" id="loading"><div class="skeleton-grid"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div></div>
+    <div class="product-grid" id="productGrid"></div>
+    <div class="empty" id="emptyState"><div class="empty-icon" id="emptyIcon">🔍</div><div class="empty-title" id="emptyTitle">没有找到相关闲置</div><div id="emptyText">换个关键词或分类试试吧</div></div>
+  </main>
+
+  <div class="modal-backdrop" id="adminLoginModal">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="adminLoginTitle">
+      <div class="modal-head"><h3 class="modal-title" id="adminLoginTitle">管理员后台</h3><button class="close-btn" data-close="adminLoginModal">×</button></div>
+      <div class="modal-body">
+        <p class="hint">该入口仅供已在 Supabase 中设置的管理员使用。</p>
+        <form id="adminLoginForm">
+          <div class="field-group"><label class="label" for="adminEmail">管理员邮箱</label><input class="field" id="adminEmail" type="email" autocomplete="username" required placeholder="admin@example.com"></div>
+          <div class="field-group"><label class="label" for="adminPassword">密码</label><input class="field" id="adminPassword" type="password" minlength="6" autocomplete="current-password" required placeholder="请输入密码"></div>
+          <div class="error" id="adminLoginError"></div><button class="submit" id="adminLoginSubmit" type="submit">进入后台</button>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <div class="drawer-backdrop" id="reserveBackdrop"></div>
+  <section class="drawer" id="reserveDrawer" role="dialog" aria-modal="true" aria-labelledby="reserveTitle">
+    <div class="drawer-handle"></div><div class="drawer-head"><h3 id="reserveTitle">我想要这个闲置</h3><button class="close-btn" id="closeReserve">×</button></div>
+    <div class="drawer-body">
+      <div class="reserve-summary" id="reserveSummary"></div>
+      <form id="reserveForm" autocomplete="off">
+        <div class="field-group"><label class="label" for="buyerName">称呼您</label><input class="field" id="buyerName" maxlength="40" required autocomplete="off" placeholder="请输入姓名或昵称"></div>
+        <div class="field-group"><label class="label" for="buyerContact">微信号</label><input class="field" id="buyerContact" maxlength="120" required autocomplete="off" placeholder="请输入微信号"></div>
+        <div class="error" id="reserveError"></div><div class="reserve-actions"><button class="btn btn-ghost" id="cancelReserve" type="button">取消</button><button class="btn btn-primary" id="reserveSubmit" type="submit">提交想要</button></div>
+      </form>
+    </div>
+  </section>
+
+  <div class="modal-backdrop" id="adminPanelModal">
+    <section class="modal wide" role="dialog" aria-modal="true" aria-labelledby="adminPanelTitle">
+      <div class="modal-head"><h3 class="modal-title" id="adminPanelTitle">管理后台</h3><button class="close-btn" data-close="adminPanelModal">×</button></div>
+      <div class="modal-body">
+        <div class="tabs"><button class="tab active" data-admin-view="overview">数据概览</button><button class="tab" data-admin-view="products">商品管理</button><button class="tab" data-admin-view="categories">分类管理</button><button class="tab" data-admin-view="reservations">预定记录</button></div>
+        <div id="adminContent"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="productModal">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="productFormTitle">
+      <div class="modal-head"><h3 class="modal-title" id="productFormTitle">发布闲置</h3><button class="close-btn" data-close="productModal">×</button></div>
+      <div class="modal-body">
+        <form id="productForm">
+          <div class="field-group"><label class="label" for="productTitle">商品标题</label><input class="field" id="productTitle" maxlength="120" required placeholder="如：高等数学教材"></div>
+          <div class="field-group"><label class="label" for="productDescription">详细描述（可选）</label><textarea class="field" id="productDescription" maxlength="3000" placeholder="成色、配件、交易说明等"></textarea></div>
+          <div class="field-row">
+            <div class="field-group"><label class="label" for="productPrice">价格（元）</label><input class="field" id="productPrice" type="number" min="0" max="99999999" step="0.01" required></div>
+            <div class="field-group"><label class="label" for="productCondition">成色</label><select class="field" id="productCondition" required><option value="">请选择</option><option>全新</option><option>几乎全新</option><option>轻微使用痕迹</option><option>明显使用痕迹</option></select></div>
+          </div>
+          <div class="field-group"><label class="label" for="productCategory">分类</label><select class="field" id="productCategory" required></select></div>
+          <div class="field-group"><label class="label" for="productQuantity">商品数量</label><input class="field" id="productQuantity" type="number" min="1" max="9999" value="1" required></div>
+          <div class="field-group"><label class="label" for="sellerContact">卖家微信（可选，仅管理员查看）</label><input class="field" id="sellerContact" maxlength="120" placeholder="仅供管理员内部对接，不会显示给买家"></div>
+          <div class="field-group"><label class="label" for="productImageUrl">图片 URL（可选）</label><input class="field" id="productImageUrl" type="url" placeholder="https://example.com/image.jpg"><div class="hint">URL 将直接保存并作为商品图片显示，不下载、不转换。</div></div>
+          <div class="field-group"><label class="label" for="productImage">上传图片（可选）</label><input class="field" id="productImage" type="file" accept="image/*"><div class="hint" id="imageHint">本地图片会压缩为 WebP，目标大小约 150KB 以内。</div></div>
+          <div class="error" id="productError"></div><div class="form-submit-actions"><button class="btn btn-primary" id="productSubmitContinue" type="submit">保存并继续添加</button><button class="btn btn-ghost" id="productSubmit" type="submit">保存并关闭</button></div>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="categoryModal">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="categoryFormTitle">
+      <div class="modal-head"><h3 class="modal-title" id="categoryFormTitle">添加分类</h3><button class="close-btn" data-close="categoryModal">×</button></div>
+      <div class="modal-body">
+        <form id="categoryForm">
+          <div class="field-row"><div class="field-group"><label class="label" for="categoryIcon">Emoji 图标</label><input class="field" id="categoryIcon" maxlength="8" required placeholder="📦"></div><div class="field-group"><label class="label" for="categorySort">排序</label><input class="field" id="categorySort" type="number" required value="0"></div></div>
+          <div class="field-group"><label class="label" for="categoryName">分类名称</label><input class="field" id="categoryName" maxlength="30" required placeholder="如：乐器"></div>
+          <div class="error" id="categoryError"></div><button class="submit" id="categorySubmit" type="submit">保存分类</button>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="confirmModal">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <div class="modal-head"><h3 class="modal-title" id="confirmTitle">请确认操作</h3><button class="close-btn" data-close="confirmModal">×</button></div>
+      <div class="modal-body"><p id="confirmText" style="color:var(--muted);margin-bottom:20px"></p><div class="reserve-actions"><button class="btn btn-ghost" id="confirmCancel" type="button">取消</button><button class="btn btn-danger" id="confirmAction" type="button">确认执行</button></div></div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop image-lightbox" id="imageLightbox"><section class="image-lightbox-panel" role="dialog" aria-modal="true" aria-labelledby="zoomImageTitle"><div class="image-lightbox-head"><strong id="zoomImageTitle">商品图片</strong><button class="close-btn" data-close="imageLightbox">×</button></div><img id="zoomImage" alt="商品大图"></section></div>
+
+  <button class="fab" id="addProductButton" aria-label="添加闲置">+</button>
+  <div class="toast" id="toast" role="status"><span class="toast-icon" id="toastIcon">✓</span><span id="toastText">操作成功</span></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>

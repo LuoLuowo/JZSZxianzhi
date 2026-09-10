@@ -1,0 +1,11 @@
+# 本地环境变量与部署产物
+.env
+.env.*
+!.env.example
+.vercel
+node_modules/
+*.log
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
