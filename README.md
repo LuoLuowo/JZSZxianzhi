@@ -19,6 +19,7 @@
 │  ├─ upgrade-announcement.sql     首页公告与好物群升级脚本
 │  ├─ upgrade-resource-dashboard.sql  二维码上传与资源统计升级脚本
 │  └─ upgrade-management-wechat.sql  统一管理微信升级脚本
+│  └─ upgrade-site-introduction-and-pinning.sql  网站介绍、副标题与商品置顶升级脚本
 ├─ supabase.sql              数据库全量重建脚本
 └─ README.md                 本说明
 ```
@@ -56,9 +57,9 @@
 
 后台现在是独立的 `admin.html` 页面，支持详细统计、商品查询、买家记录查询、永久商品码查询、分类管理及管理员授权。商品删除或售出后，商品码仍保存在永久台账中，永远不会重新分配。
 
-首页公告和好物群二维码在后台“数据概览”中编辑。已有数据库执行 `supabase/upgrade-announcement.sql` 即可启用，不会删除现有数据。
+首页公告、首页标题下方描述和“网站介绍”均在后台“数据概览”中编辑。“网站介绍”支持换行文字、图片 URL 或本地上传图片；已有数据库执行 `supabase/upgrade-site-introduction-and-pinning.sql` 即可启用，也会补齐商品置顶字段，不会删除现有数据。
 
-好物群二维码支持后台上传本地图片或填写 URL。后台“资源占用”页面每 15 秒更新 Supabase Storage、数据库、图片数量和合计容量；启用该页面需执行 `supabase/upgrade-resource-dashboard.sql`。
+网站介绍图片支持后台上传本地图片或填写 URL。后台“资源占用”页面每 15 秒更新 Supabase Storage、数据库、图片数量和合计容量；启用该页面需执行 `supabase/upgrade-resource-dashboard.sql`。
 
 添加其他管理员前，先在 Supabase **Authentication → Users** 创建并确认该邮箱账号，然后进入独立后台的“管理员管理”，输入邮箱完成授权。
 
@@ -90,7 +91,8 @@ http://localhost:8080
 - 管理员添加、编辑和删除分类
 - 管理员确认成交时自动扣减库存，取消已成交记录时自动返还库存
 - 管理员确认、取消和删除想要记录；危险操作均需二次确认
-- 本地上传图片和好物群二维码会压缩为 WebP，目标大小约 150KB 以内；外部 URL 图片直接引用，不占用 Storage
+- 管理员可以在商品编辑页勾选“🔝 置顶商品”，置顶商品会优先展示在前台
+- 本地上传商品图和网站介绍图会压缩为 WebP，目标大小约 150KB 以内；外部 URL 图片直接引用，不占用 Storage
 - 商品会自动分配 5 位数字对接码；买家提交后可复制对接码并查看统一的卖方管理微信
 - Products/Categories Realtime 自动刷新
 - 响应式布局和移动端横向分类栏

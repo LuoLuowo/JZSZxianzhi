@@ -60,7 +60,9 @@ create table public.site_settings (
   id boolean primary key default true check (id),
   admin_wechat text not null default '',
   announcement text not null default '' check (char_length(announcement) <= 2000),
-  group_qr_url text,
+  hero_subtitle text not null default '校内二手闲置交换，教材、数码、生活好物，轻松找到下一位主人。' check (char_length(hero_subtitle) <= 500),
+  introduction_content text not null default '' check (char_length(introduction_content) <= 5000),
+  introduction_image_url text,
   updated_at timestamptz not null default now()
 );
 
@@ -109,6 +111,7 @@ create table public.products (
   status text not null default 'available' check (status in ('available','sold','removed')),
   image_url text,
   seller_contact text,
+  is_pinned boolean not null default false,
   is_demo boolean not null default false,
   created_at timestamptz not null default now()
 );
@@ -146,6 +149,7 @@ create table public.reservations (
 
 create index products_category_idx on public.products(category_id);
 create index products_created_idx on public.products(created_at desc);
+create index products_pinned_created_idx on public.products(is_pinned desc, created_at desc);
 create index reservations_product_idx on public.reservations(product_id);
 create index reservations_created_idx on public.reservations(created_at desc);
 
@@ -339,7 +343,7 @@ with (security_invoker = false)
 as
 select
   p.id,p.title,p.description,p.price,p.condition,p.campus,p.category_id,p.status,
-  p.image_url,p.is_demo,p.quantity,p.sold_quantity,
+  p.image_url,p.is_demo,p.quantity,p.sold_quantity,p.is_pinned,
   greatest(p.quantity-p.sold_quantity,0) as available_quantity,
   count(r.id) filter (where r.status in ('pending','confirmed'))::integer as wanted_count,
   p.created_at,
@@ -353,7 +357,7 @@ group by p.id,c.id;
 -- 仅公开公告和群二维码，不暴露其他后台设置。
 create view public.public_site_settings
 with (security_invoker = false)
-as select id,announcement,group_qr_url,updated_at from public.site_settings where id=true;
+as select id,announcement,hero_subtitle,introduction_content,introduction_image_url,updated_at from public.site_settings where id=true;
 
 revoke all on public.profiles,public.categories,public.hot_searches,public.site_settings,public.product_code_registry,public.products,public.reservations from anon,authenticated;
 grant select on public.categories to anon,authenticated;

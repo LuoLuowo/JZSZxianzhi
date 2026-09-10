@@ -48,6 +48,7 @@
             <div class="field-group"><label class="label" for="editProductQuantity">商品总数量</label><input class="field" id="editProductQuantity" type="number" min="1" max="9999" required></div>
             <div class="field-group"><label class="label" for="editProductSoldQuantity">已售数量</label><input class="field" id="editProductSoldQuantity" type="number" min="0" max="9999" required></div>
           </div>
+          <label class="pin-setting"><input id="editProductPinned" type="checkbox"> <span>🔝 置顶商品</span><small>置顶商品会优先显示在前台列表顶部。</small></label>
           <div class="field-group"><label class="label" for="editSellerContact">卖家微信（仅管理员可见）</label><input class="field" id="editSellerContact" maxlength="120"></div>
           <div class="field-group"><label class="label" for="editProductImageUrl">图片 URL（可选）</label><input class="field" id="editProductImageUrl" type="url" placeholder="https://example.com/image.jpg"><div class="hint">保留原地址即可不更换图片；外部 URL 会直接引用。</div></div>
           <div class="field-group"><label class="label" for="editProductImageFile">上传新图片（可选）</label><input class="field" id="editProductImageFile" type="file" accept="image/*"><div class="hint" id="editProductImageHint">本地图片会转为 WebP 并压缩至约 150KB 以内。</div></div>

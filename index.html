@@ -30,13 +30,13 @@
   <div class="announcement-bar" id="announcementBar" hidden><span class="announcement-icon">📢</span><div class="announcement-window"><div class="announcement-track" id="announcementText"></div></div></div>
 
   <section class="hero">
-    <div class="hero-actions"><button class="hero-link" id="groupButton" type="button">💬 好物群</button></div>
+    <div class="hero-actions"><button class="hero-link" id="introductionButton" type="button">📖 网站介绍</button></div>
     <h1 class="hero-title">焦大师专闲置好物平台</h1>
-    <p class="hero-subtitle">校内二手闲置交换，教材、数码、生活好物，轻松找到下一位主人。</p>
+    <p class="hero-subtitle" id="heroSubtitle">校内二手闲置交换，教材、数码、生活好物，轻松找到下一位主人。</p>
     <div class="main-search"><input id="mainSearch" type="search" placeholder="搜索标题或商品描述…"><button id="mainSearchButton">搜索</button></div>
   </section>
 
-  <div class="modal-backdrop" id="groupQrModal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="groupQrTitle"><div class="modal-head"><h3 class="modal-title" id="groupQrTitle">焦大师专闲置好物群</h3><button class="close-btn" data-close="groupQrModal">×</button></div><div class="modal-body group-qr-body"><img id="groupQrImage" alt="好物群二维码"><p>添加好物群了解更多</p></div></section></div>
+  <div class="modal-backdrop" id="introductionModal"><section class="modal introduction-modal" role="dialog" aria-modal="true" aria-labelledby="introductionTitle"><div class="modal-head"><h3 class="modal-title" id="introductionTitle">焦大师专闲置好物平台介绍</h3><button class="close-btn" data-close="introductionModal">×</button></div><div class="modal-body introduction-body"><img id="introductionImage" alt="网站介绍图片" hidden><p id="introductionContent"></p></div></section></div>
 
   <div class="modal-backdrop" id="connectionModal">
     <section class="modal" role="dialog" aria-modal="true" aria-labelledby="connectionTitle">

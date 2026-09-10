@@ -3,7 +3,7 @@ const SUPABASE_URL = 'https://znrnaeebnuadbxyqaild.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable__uNRNeHvjKIMfIIdhQod6Q_KVqpmE3F';
 const db = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 const $ = id => document.getElementById(id);
-const state = {user:null,view:'overview',search:'',products:[],reservations:[],codes:[],categories:[],hotSearches:[],hotSearchError:null,admins:[],settings:{admin_wechat:'',announcement:'',group_qr_url:''},resources:{},confirmAction:null,editingProduct:null,channel:null};
+const state = {user:null,view:'overview',search:'',products:[],reservations:[],codes:[],hotSearches:[],hotSearchError:null,admins:[],settings:{admin_wechat:'',announcement:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},resources:{},confirmAction:null,editingProduct:null,channel:null};
 const viewMeta = {
   overview:['数据概览','查看平台实时运营数据'],products:['商品管理','查询商品、库存、卖家微信和商品码'],
   reservations:['想要记录','查询买家联系方式并处理成交'],codes:['对接码查询','查询当前和历史商品码'],
@@ -76,19 +76,19 @@ async function logout() { await db.auth.signOut(); location.replace('index.html'
 async function refreshData() {
   $('adminPageContent').innerHTML='<div class="loading show">正在加载后台数据…</div>';
   const results=await Promise.all([
-    db.from('products').select('*,categories(id,name,icon)').order('created_at',{ascending:false}),
+    db.from('products').select('*,categories(id,name,icon)').order('is_pinned',{ascending:false}).order('created_at',{ascending:false}),
     db.from('reservations').select('*,products(id,title,connection_code)').neq('status','cancelled').order('created_at',{ascending:false}),
     db.from('product_code_registry').select('*').order('issued_at',{ascending:false}),
     db.from('categories').select('*').order('sort_order').order('id'),
     db.rpc('admin_list_admins'),
-    db.from('site_settings').select('admin_wechat,announcement,group_qr_url').eq('id',true).maybeSingle(),
+    db.from('site_settings').select('admin_wechat,announcement,hero_subtitle,introduction_content,introduction_image_url').eq('id',true).maybeSingle(),
     db.rpc('admin_resource_usage'),
     db.from('hot_searches').select('*').order('sort_order').order('id')
   ]);
   const failed=results.slice(0,7).find(result=>result.error);
   if (failed) { $('adminPageContent').innerHTML=`<div class="empty show"><div class="empty-icon">!</div><div class="empty-title">后台数据加载失败</div><div>${esc(errorText(failed.error))}</div></div>`; return; }
   [state.products,state.reservations,state.codes,state.categories,state.admins]=results.slice(0,5).map(result=>result.data||[]);
-  state.settings=results[5].data || {admin_wechat:'',announcement:'',group_qr_url:''};
+  state.settings=results[5].data || {admin_wechat:'',announcement:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''};
   state.resources=results[6].data || {};
   state.hotSearches=results[7].data || [];
   state.hotSearchError=results[7].error || null;
@@ -122,7 +122,7 @@ function renderOverview() {
   const confirmed=state.reservations.filter(r=>r.status==='confirmed').length;
   $('adminPageContent').innerHTML=`<div class="dashboard-stats">
     ${[['商品总数',state.products.length],['在售商品',active],['剩余库存',stock],['累计商品码',state.codes.length],['想要记录',state.reservations.length],['待处理',pending],['已成交',confirmed],['近期热搜',state.hotSearches.filter(item=>item.is_active).length],['管理员',state.admins.length]].map(item=>`<div class="dashboard-card"><span>${item[0]}</span><strong>${item[1]}</strong></div>`).join('')}
-  </div><section class="dashboard-section"><h2>前台公告与好物群</h2><form id="siteSettingsForm"><div class="field-group"><label class="label" for="managementWechatInput">卖方管理微信</label><input class="field" id="managementWechatInput" maxlength="120" value="${esc(state.settings.admin_wechat||'')}" placeholder="买家提交想要后统一显示此管理员微信"><div class="hint">商品里的卖家微信仅供管理员内部查看，不会提供给买家。</div></div><div class="field-group"><label class="label" for="announcementInput">公告内容</label><textarea class="field" id="announcementInput" maxlength="2000" placeholder="留空则不显示公告">${esc(state.settings.announcement||'')}</textarea></div><div class="field-row"><div class="field-group"><label class="label" for="groupQrInput">二维码图片 URL</label><input class="field" id="groupQrInput" type="url" value="${esc(state.settings.group_qr_url||'')}" placeholder="任意可显示的图片直链"></div><div class="field-group"><label class="label" for="groupQrFile">上传二维码图片</label><input class="field" id="groupQrFile" type="file" accept="image/*"><div class="hint">本地图片会压缩为约 150KB 以内的 WebP；上传文件优先于 URL。</div></div></div>${state.settings.group_qr_url?`<div class="settings-qr-current"><img class="settings-qr-preview" src="${esc(state.settings.group_qr_url)}" alt="当前好物群二维码"><button class="btn btn-danger btn-small" type="button" data-delete-group-qr>删除二维码</button></div>`:''}<button class="btn btn-primary" type="submit">保存前台设置</button></form></section><section class="dashboard-section"><h2>最近想要记录</h2>${reservationTable(state.reservations.slice(0,5),false)}</section>`;
+  </div><section class="dashboard-section"><h2>前台展示设置</h2><form id="siteSettingsForm"><div class="field-group"><label class="label" for="managementWechatInput">卖方管理微信</label><input class="field" id="managementWechatInput" maxlength="120" value="${esc(state.settings.admin_wechat||'')}" placeholder="买家提交想要后统一显示此管理员微信"><div class="hint">商品里的卖家微信仅供管理员内部查看，不会提供给买家。</div></div><div class="field-group"><label class="label" for="heroSubtitleInput">首页标题下方描述</label><textarea class="field" id="heroSubtitleInput" maxlength="500" placeholder="首页主标题下方的简介文字">${esc(state.settings.hero_subtitle||'')}</textarea></div><div class="field-group"><label class="label" for="announcementInput">公告内容</label><textarea class="field" id="announcementInput" maxlength="2000" placeholder="留空则不显示公告">${esc(state.settings.announcement||'')}</textarea></div><div class="field-group"><label class="label" for="introductionContentInput">网站介绍文字</label><textarea class="field" id="introductionContentInput" maxlength="5000" placeholder="支持换行，可写使用说明、交易规则或常见问题">${esc(state.settings.introduction_content||'')}</textarea></div><div class="field-row"><div class="field-group"><label class="label" for="introductionImageInput">介绍图片 URL</label><input class="field" id="introductionImageInput" type="url" value="${esc(state.settings.introduction_image_url||'')}" placeholder="任意可显示的图片直链"></div><div class="field-group"><label class="label" for="introductionImageFile">上传介绍图片</label><input class="field" id="introductionImageFile" type="file" accept="image/*"><div class="hint">本地图片会压缩为约 150KB 以内的 WebP；上传文件优先于 URL。</div></div></div>${state.settings.introduction_image_url?`<div class="settings-qr-current"><img class="settings-qr-preview" src="${esc(state.settings.introduction_image_url)}" alt="当前网站介绍图片"><button class="btn btn-danger btn-small" type="button" data-delete-introduction-image>删除图片</button></div>`:''}<button class="btn btn-primary" type="submit">保存前台展示设置</button></form></section><section class="dashboard-section"><h2>最近想要记录</h2>${reservationTable(state.reservations.slice(0,5),false)}</section>`;
 }
 
 function filtered(items,fields) { const term=normalize(state.search); return !term?items:items.filter(item=>fields(item).some(value=>normalize(value).includes(term))); }
@@ -146,7 +146,7 @@ function renderCodes() {
 function renderResources() {
   const usage=state.resources||{};
   const imageItems=state.products.filter(p=>p.image_url).map(p=>({title:p.title,url:p.image_url,code:p.connection_code}));
-  if(state.settings.group_qr_url)imageItems.unshift({title:'好物群二维码',url:state.settings.group_qr_url,code:'群二维码'});
+  if(state.settings.introduction_image_url)imageItems.unshift({title:'网站介绍图片',url:state.settings.introduction_image_url,code:'介绍图'});
   const images=filtered(imageItems,p=>[p.title,p.url,p.code]);
   $('adminPageContent').innerHTML=`<div class="toolbar-row"><span class="hint">统计范围：Supabase 数据库与 product-images 存储桶；外链图片不占用 Supabase Storage。</span><button class="btn btn-primary" data-refresh-resources>刷新统计</button></div><div class="dashboard-stats">
     ${[['网站资源合计',formatBytes(usage.total_bytes)],['Storage 图片',formatBytes(usage.storage_bytes)],['数据库',formatBytes(usage.database_bytes)],['存储文件数',usage.storage_image_count||0],['商品图片数',usage.product_image_count||0],['外链图片数',usage.external_image_count||0]].map(item=>`<div class="dashboard-card"><span>${item[0]}</span><strong>${item[1]}</strong></div>`).join('')}
@@ -180,7 +180,7 @@ async function compressAdminImage(file) {
   try{const image=new Image();image.src=objectUrl;await image.decode();const target=150*1024;let scale=Math.min(1,1600/Math.max(image.naturalWidth,image.naturalHeight)),quality=.84,output;for(let i=0;i<18;i++){const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));canvas.getContext('2d',{alpha:false}).drawImage(image,0,0,canvas.width,canvas.height);output=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',quality));if(!output)throw new Error('图片转换失败');if(output.size<=target)break;if(quality>.42)quality-=.07;else{scale*=.82;quality=.68;}}if(!output||output.size>target)throw new Error('压缩后仍超过 150KB，请换一张图片');return output;}finally{URL.revokeObjectURL(objectUrl);}
 }
 function storagePath(url){const marker='/storage/v1/object/public/product-images/';const index=String(url||'').indexOf(marker);return index<0?null:decodeURIComponent(url.slice(index+marker.length));}
-async function uploadQr(file){const blob=await compressAdminImage(file);const path=`admin/group-${crypto.randomUUID?crypto.randomUUID():Date.now()}.webp`;const {error}=await db.storage.from('product-images').upload(path,new File([blob],'group.webp',{type:'image/webp'}),{contentType:'image/webp',cacheControl:'31536000'});if(error)throw error;return {url:db.storage.from('product-images').getPublicUrl(path).data.publicUrl,path};}
+async function uploadIntroductionImage(file){const blob=await compressAdminImage(file);const path=`admin/introduction-${crypto.randomUUID?crypto.randomUUID():Date.now()}.webp`;const {error}=await db.storage.from('product-images').upload(path,new File([blob],'introduction.webp',{type:'image/webp'}),{contentType:'image/webp',cacheControl:'31536000'});if(error)throw error;return {url:db.storage.from('product-images').getPublicUrl(path).data.publicUrl,path};}
 
 function openProductEditor(id) {
   const product=state.products.find(item=>item.id===id);
@@ -198,6 +198,7 @@ function openProductEditor(id) {
   $('editProductStatus').value=product.status;
   $('editProductQuantity').value=product.quantity;
   $('editProductSoldQuantity').value=product.sold_quantity;
+  $('editProductPinned').checked=Boolean(product.is_pinned);
   $('editSellerContact').value=product.seller_contact||'';
   $('editProductImageUrl').value=product.image_url||'';
   $('editProductImageHint').textContent='上传新图片会替换当前图片，并压缩为约 150KB 以内的 WebP。';
@@ -241,7 +242,7 @@ async function saveProductEdit(event) {
     let finalSold=soldQuantity;
     if(status==='sold')finalSold=quantity;
     if(status==='available'&&finalSold>=quantity)throw new Error('在售商品的已售数量必须小于商品总数量');
-    const payload={title:$('editProductTitle').value.trim(),description:$('editProductDescription').value.trim(),price:Number($('editProductPrice').value),condition:$('editProductCondition').value,category_id:Number($('editProductCategory').value),quantity,sold_quantity:finalSold,seller_contact:$('editSellerContact').value.trim()||null,status,image_url:imageUrl};
+    const payload={title:$('editProductTitle').value.trim(),description:$('editProductDescription').value.trim(),price:Number($('editProductPrice').value),condition:$('editProductCondition').value,category_id:Number($('editProductCategory').value),quantity,sold_quantity:finalSold,seller_contact:$('editSellerContact').value.trim()||null,status,image_url:imageUrl,is_pinned:$('editProductPinned').checked};
     const {error}=await db.from('products').update(payload).eq('id',product.id);
     if(error)throw error;
     const oldPath=storagePath(product.image_url);
@@ -252,9 +253,9 @@ async function saveProductEdit(event) {
   }catch(error){if(uploaded?.path)await db.storage.from('product-images').remove([uploaded.path]);$('editProductError').textContent=errorText(error);}
   finally{busy(button,false);}
 }
-async function saveSiteSettings(event) { event.preventDefault();const button=event.submitter;const file=$('groupQrFile').files[0];let uploaded=null;busy(button,true,file?'上传二维码中…':'保存中…');try{if(file)uploaded=await uploadQr(file);let qr=uploaded?.url||$('groupQrInput').value.trim()||null;if(qr){let parsed;try{parsed=new URL(qr);}catch{throw new Error('二维码 URL 格式不正确');}if(!['http:','https:'].includes(parsed.protocol))throw new Error('二维码 URL 必须以 http 或 https 开头');qr=parsed.href;}const payload={admin_wechat:$('managementWechatInput').value.trim(),announcement:$('announcementInput').value.trim(),group_qr_url:qr,updated_at:new Date().toISOString()};const {error}=await db.from('site_settings').update(payload).eq('id',true);if(error)throw error;const oldPath=storagePath(state.settings.group_qr_url);if(uploaded&&oldPath&&oldPath!==uploaded.path)await db.storage.from('product-images').remove([oldPath]);state.settings=payload;toast('前台设置已保存');await refreshData();}catch(error){if(uploaded?.path)await db.storage.from('product-images').remove([uploaded.path]);toast(errorText(error),false);}finally{busy(button,false);} }
-async function deleteGroupQr() {const url=state.settings.group_qr_url;if(!url)return;const {error}=await db.from('site_settings').update({group_qr_url:null,updated_at:new Date().toISOString()}).eq('id',true);if(error)return toast(errorText(error),false);const path=storagePath(url);if(path)await db.storage.from('product-images').remove([path]);toast('好物群二维码已删除');await refreshData();}
-function requestDeleteGroupQr() {askConfirm('删除好物群二维码','确定删除当前好物群二维码吗？前台“好物群”入口将暂时无法展示二维码。','删除二维码',deleteGroupQr);}
+async function saveSiteSettings(event) {event.preventDefault();const button=event.submitter;const file=$('introductionImageFile').files[0];let uploaded=null;busy(button,true,file?'上传介绍图片中…':'保存中…');try{if(file)uploaded=await uploadIntroductionImage(file);let imageUrl=uploaded?.url||$('introductionImageInput').value.trim()||null;if(imageUrl){let parsed;try{parsed=new URL(imageUrl);}catch{throw new Error('介绍图片 URL 格式不正确');}if(!['http:','https:'].includes(parsed.protocol))throw new Error('介绍图片 URL 必须以 http 或 https 开头');imageUrl=parsed.href;}const payload={admin_wechat:$('managementWechatInput').value.trim(),hero_subtitle:$('heroSubtitleInput').value.trim(),announcement:$('announcementInput').value.trim(),introduction_content:$('introductionContentInput').value.trim(),introduction_image_url:imageUrl,updated_at:new Date().toISOString()};const {error}=await db.from('site_settings').update(payload).eq('id',true);if(error)throw error;const oldPath=storagePath(state.settings.introduction_image_url);if(uploaded&&oldPath&&oldPath!==uploaded.path)await db.storage.from('product-images').remove([oldPath]);state.settings=payload;toast('前台展示设置已保存');await refreshData();}catch(error){if(uploaded?.path)await db.storage.from('product-images').remove([uploaded.path]);toast(errorText(error),false);}finally{busy(button,false);}}
+async function deleteIntroductionImage() {const url=state.settings.introduction_image_url;if(!url)return;const {error}=await db.from('site_settings').update({introduction_image_url:null,updated_at:new Date().toISOString()}).eq('id',true);if(error)return toast(errorText(error),false);const path=storagePath(url);if(path)await db.storage.from('product-images').remove([path]);toast('网站介绍图片已删除');await refreshData();}
+function requestDeleteIntroductionImage() {askConfirm('删除网站介绍图片','确定删除当前网站介绍图片吗？前台介绍弹窗将只保留文字内容。','删除图片',deleteIntroductionImage);}
 
 async function setProductStatus(id,status) {
   const product=state.products.find(p=>p.id===id); const payload={status};
@@ -288,7 +289,7 @@ function bindEvents() {
   $('adminPageContent').addEventListener('click',event=>{
     const target=event.target;
     if(target.closest('[data-refresh-resources]'))return refreshResources();
-    if(target.closest('[data-delete-group-qr]'))return requestDeleteGroupQr();
+    if(target.closest('[data-delete-introduction-image]'))return requestDeleteIntroductionImage();
     if(target.dataset.copyCode)return copyCode(target.dataset.copyCode);
     if(target.dataset.editProduct)return openProductEditor(target.dataset.editProduct);
     if(target.dataset.productStatus){const product=state.products.find(p=>p.id===target.dataset.id);const label={sold:'标记售罄',removed:'下架',available:'重新上架'}[target.dataset.productStatus];return askConfirm('确认商品操作',`确定要将“${product?.title||'该商品'}”${label}吗？`,label,()=>setProductStatus(target.dataset.id,target.dataset.productStatus),target.dataset.productStatus==='available');}

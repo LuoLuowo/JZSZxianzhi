@@ -21,7 +21,7 @@ const state = {
   editingProduct: null,
   editingCategory: null,
   pendingConfirm: null,
-  publicSettings: {announcement:'',group_qr_url:''},
+  publicSettings: {announcement:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},
   channel: null
 };
 
@@ -157,8 +157,9 @@ function productsPerPage() {
 async function loadPublicSettings() {
   const {data,error}=await state.client.from('public_site_settings').select('*').eq('id',true).maybeSingle();
   if (error) throw error;
-  state.publicSettings=data || {announcement:'',group_qr_url:''};
+  state.publicSettings=data || {announcement:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''};
   const announcement=state.publicSettings.announcement?.trim();
+  $('heroSubtitle').textContent=state.publicSettings.hero_subtitle?.trim() || '校内二手闲置交换，教材、数码、生活好物，轻松找到下一位主人。';
   renderAnnouncement(announcement);
 }
 
@@ -183,11 +184,14 @@ function renderAnnouncement(announcement) {
   });
 }
 
-function openGroupQr() {
-  const url=state.publicSettings.group_qr_url?.trim();
-  if (!url) return toast('好物群二维码暂未上传',false);
-  $('groupQrImage').src=url;
-  openModal('groupQrModal');
+function openIntroduction() {
+  const content=state.publicSettings.introduction_content?.trim();
+  const imageUrl=state.publicSettings.introduction_image_url?.trim();
+  if(!content&&!imageUrl)return toast('网站介绍暂未发布',false);
+  $('introductionContent').textContent=content || '欢迎来到焦大师专闲置好物平台。';
+  $('introductionImage').hidden=!imageUrl;
+  if(imageUrl)$('introductionImage').src=imageUrl;
+  openModal('introductionModal');
 }
 
 function renderCategories() {
@@ -216,6 +220,7 @@ async function loadProducts() {
   if (term) query = query.or(`title.ilike.%${term}%,description.ilike.%${term}%,category_name.ilike.%${term}%,campus.ilike.%${term}%`);
   if(state.minPrice!==null)query=query.gte('price',state.minPrice);
   if(state.maxPrice!==null)query=query.lte('price',state.maxPrice);
+  query=query.order('is_pinned',{ascending:false});
   if(state.sort==='price_asc')query=query.order('price',{ascending:true}).order('created_at',{ascending:false});
   else if(state.sort==='price_desc')query=query.order('price',{ascending:false}).order('created_at',{ascending:false});
   else query=query.order('created_at',{ascending:false});
@@ -244,7 +249,7 @@ function renderProducts() {
   $('emptyState').classList.remove('show');
   $('productGrid').innerHTML = state.products.map(p => `
     <article class="product-card ${p.status==='sold'?'sold':''}" data-product-id="${p.id}" tabindex="0">
-      <div class="product-media">${productMedia(p)}<span class="status status-${p.status}">${statusText[p.status]}</span></div>
+      <div class="product-media">${productMedia(p)}${p.is_pinned?'<span class="pin-badge">🔝 置顶</span>':''}<span class="status status-${p.status}">${statusText[p.status]}</span></div>
       <div class="product-body">
         <h3 class="product-title">${escapeHtml(p.title)}</h3>
         <div class="product-row"><span class="price"><small>¥</small>${money(p.price)}</span><span class="condition">${escapeHtml(p.condition)}</span></div>
@@ -819,7 +824,7 @@ function bindEvents() {
   $('sortToggle').addEventListener('click',()=>{const opening=$('sortMenu').hidden;$('sortMenu').hidden=!opening;$('sortToggle').setAttribute('aria-expanded',String(opening));});
   $('sortMenu').addEventListener('click',event=>{const button=event.target.closest('[data-sort]');if(!button)return;state.sort=button.dataset.sort;state.page=1;updateSortControl();loadProducts();});
   $('pagination').addEventListener('click',event=>{const button=event.target.closest('[data-page]');if(!button||button.disabled)return;state.page=Number(button.dataset.page);loadProducts().then(()=>document.querySelector('.section-head').scrollIntoView({behavior:'smooth',block:'start'}));});
-  $('groupButton').addEventListener('click',openGroupQr);
+  $('introductionButton').addEventListener('click',openIntroduction);
   document.querySelectorAll('[data-admin-view]').forEach(button => button.addEventListener('click',() => {state.adminView=button.dataset.adminView;loadAdminView();}));
   $('adminContent').addEventListener('click',event => {
     if (event.target.closest('[data-add-product]')) return openProductForm();
