@@ -144,7 +144,7 @@ async function loadHotSearches() {
 }
 
 function renderHotSearches() {
-  $('hotSearchList').innerHTML=state.hotSearches.map(item=>`<button class="hot-search-tag ${state.search===item.keyword?'active':''}" type="button" data-hot-search="${escapeHtml(item.keyword)}">🔥 ${escapeHtml(item.keyword)}</button>`).join('');
+  $('hotSearchList').innerHTML=state.hotSearches.map(item=>{const active=state.search===item.keyword;return `<button class="hot-search-tag ${active?'active':''}" type="button" data-hot-search="${escapeHtml(item.keyword)}" aria-pressed="${active}">🔥 ${escapeHtml(item.keyword)}${active?' ×':''}</button>`;}).join('');
   $('hotSearches').hidden=!state.hotSearches.length;
 }
 
@@ -262,22 +262,23 @@ function searchFrom(inputId, scroll=false) {
 
 const liveSearch = debounce(inputId => searchFrom(inputId), 300);
 
+const sortLabels={newest:'最新发布',price_asc:'价格从低到高',price_desc:'价格从高到低'};
+function closeSortMenu() {$('sortMenu').hidden=true;$('sortToggle').setAttribute('aria-expanded','false');}
+function updateSortControl() {
+  $('sortLabel').textContent=sortLabels[state.sort]||sortLabels.newest;
+  document.querySelectorAll('[data-sort]').forEach(button=>{const active=button.dataset.sort===state.sort;button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));});
+  closeSortMenu();
+}
+
+function clearAllFilters() {
+  state.categoryId='all';state.search='';state.minPrice=null;state.maxPrice=null;state.sort='newest';state.page=1;
+  $('navSearch').value='';$('mainSearch').value='';$('minPrice').value='';$('maxPrice').value='';
+  renderCategories();renderHotSearches();updateSortControl();loadProducts();
+}
+
 function resetHome(event) {
   event?.preventDefault();
-  state.categoryId = 'all';
-  state.search = '';
-  state.minPrice = null;
-  state.maxPrice = null;
-  state.sort = 'newest';
-  state.page = 1;
-  $('navSearch').value = '';
-  $('mainSearch').value = '';
-  $('minPrice').value='';
-  $('maxPrice').value='';
-  $('productSort').value='newest';
-  renderCategories();
-  renderHotSearches();
-  loadProducts();
+  clearAllFilters();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
@@ -766,7 +767,7 @@ function bindEvents() {
   $('hotSearchList').addEventListener('click',event=>{
     const button=event.target.closest('[data-hot-search]');
     if(!button)return;
-    state.search=button.dataset.hotSearch;
+    state.search=state.search===button.dataset.hotSearch?'':button.dataset.hotSearch;
     state.page=1;
     $('navSearch').value=state.search;
     $('mainSearch').value=state.search;
@@ -794,9 +795,10 @@ function bindEvents() {
     if(min!==null&&max!==null&&min>max)return toast('最低价格不能高于最高价格',false);
     state.minPrice=min;state.maxPrice=max;state.page=1;loadProducts();
   });
-  $('clearPriceFilter').addEventListener('click',()=>{$('minPrice').value='';$('maxPrice').value='';state.minPrice=null;state.maxPrice=null;state.page=1;loadProducts();});
+  $('clearPriceFilter').addEventListener('click',clearAllFilters);
   ['minPrice','maxPrice'].forEach(id=>$(id).addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();$('applyPriceFilter').click();}}));
-  $('productSort').addEventListener('change',event=>{state.sort=event.target.value;state.page=1;loadProducts();});
+  $('sortToggle').addEventListener('click',()=>{const opening=$('sortMenu').hidden;$('sortMenu').hidden=!opening;$('sortToggle').setAttribute('aria-expanded',String(opening));});
+  $('sortMenu').addEventListener('click',event=>{const button=event.target.closest('[data-sort]');if(!button)return;state.sort=button.dataset.sort;state.page=1;updateSortControl();loadProducts();});
   $('pagination').addEventListener('click',event=>{const button=event.target.closest('[data-page]');if(!button||button.disabled)return;state.page=Number(button.dataset.page);loadProducts().then(()=>document.querySelector('.section-head').scrollIntoView({behavior:'smooth',block:'start'}));});
   $('groupButton').addEventListener('click',openGroupQr);
   document.querySelectorAll('[data-admin-view]').forEach(button => button.addEventListener('click',() => {state.adminView=button.dataset.adminView;loadAdminView();}));
@@ -818,8 +820,8 @@ function bindEvents() {
     const deleteReservationButton = event.target.closest('[data-delete-reservation]');
     if (deleteReservationButton) return requestDeleteReservation(deleteReservationButton.dataset.deleteReservation);
   });
-  document.addEventListener('click',event => { if(!event.target.closest('#adminSession')) $('adminSession').classList.remove('open'); });
-  document.addEventListener('keydown',event => { if(event.key==='Escape'){state.pendingConfirm=null;document.querySelectorAll('.modal-backdrop.open').forEach(m=>closeModal(m.id));closeReserve();} });
+  document.addEventListener('click',event => { if(!event.target.closest('#adminSession')) $('adminSession').classList.remove('open');if(!event.target.closest('#sortFilter'))closeSortMenu(); });
+  document.addEventListener('keydown',event => { if(event.key==='Escape'){closeSortMenu();state.pendingConfirm=null;document.querySelectorAll('.modal-backdrop.open').forEach(m=>closeModal(m.id));closeReserve();} });
   let currentPageSize=productsPerPage();
   window.addEventListener('resize',debounce(()=>{const next=productsPerPage();if(next!==currentPageSize){currentPageSize=next;state.page=1;loadProducts();}},250));
 }
@@ -827,6 +829,7 @@ function bindEvents() {
 async function init() {
   applyTheme(localStorage.getItem('jzsf-admin-theme') || 'light');
   bindEvents();
+  updateSortControl();
   if (!window.supabase?.createClient) {
     $('notice').textContent = 'Supabase 客户端加载失败，请检查网络后刷新页面。';
     $('notice').classList.add('show');
