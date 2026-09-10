@@ -185,13 +185,33 @@ function renderAnnouncement(announcement) {
 }
 
 function openIntroduction() {
-  const content=state.publicSettings.introduction_content?.trim();
+  const content=sanitizeIntroductionHtml(state.publicSettings.introduction_content||'');
   const imageUrl=state.publicSettings.introduction_image_url?.trim();
-  if(!content&&!imageUrl)return toast('网站介绍暂未发布',false);
-  $('introductionContent').textContent=content || '欢迎来到焦大师专闲置好物平台。';
+  if(!content.trim()&&!imageUrl)return toast('网站介绍暂未发布',false);
+  $('introductionContent').innerHTML=content || '欢迎来到焦大师专闲置好物平台。';
   $('introductionImage').hidden=!imageUrl;
   if(imageUrl)$('introductionImage').src=imageUrl;
   openModal('introductionModal');
+}
+
+function sanitizeIntroductionHtml(value) {
+  const template=document.createElement('template');
+  template.innerHTML=String(value||'');
+  const allowed=new Set(['STRONG','B','BR','DIV','P']);
+  const clean=node=>{
+    if(node.nodeType===Node.TEXT_NODE)return document.createTextNode(node.textContent||'');
+    if(node.nodeType!==Node.ELEMENT_NODE)return document.createDocumentFragment();
+    const fragment=document.createDocumentFragment();
+    for(const child of [...node.childNodes])fragment.append(clean(child));
+    if(!allowed.has(node.tagName))return fragment;
+    const tag=node.tagName==='B'?'strong':node.tagName.toLowerCase();
+    const element=document.createElement(tag);
+    element.append(fragment);
+    return element;
+  };
+  const output=document.createElement('div');
+  for(const child of [...template.content.childNodes])output.append(clean(child));
+  return output.innerHTML;
 }
 
 function renderCategories() {
