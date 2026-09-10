@@ -159,9 +159,28 @@ async function loadPublicSettings() {
   if (error) throw error;
   state.publicSettings=data || {announcement:'',group_qr_url:''};
   const announcement=state.publicSettings.announcement?.trim();
-  $('announcementText').textContent=announcement || '';
-  $('announcementBar').hidden=!announcement;
-  requestAnimationFrame(()=>$('announcementBar').classList.toggle('scrolling',!$('announcementBar').hidden && $('announcementText').scrollWidth>$('announcementBar').clientWidth-50));
+  renderAnnouncement(announcement);
+}
+
+function renderAnnouncement(announcement) {
+  const bar=$('announcementBar');
+  const track=$('announcementText');
+  track.replaceChildren();
+  bar.hidden=!announcement;
+  bar.classList.remove('scrolling');
+  if(!announcement)return;
+  const message=document.createElement('span');
+  message.className='announcement-message';
+  message.textContent=announcement;
+  track.append(message);
+  requestAnimationFrame(()=>{
+    const windowEl=bar.querySelector('.announcement-window');
+    if(message.scrollWidth<=windowEl.clientWidth)return;
+    const duplicate=message.cloneNode(true);
+    duplicate.setAttribute('aria-hidden','true');
+    track.append(duplicate);
+    bar.classList.add('scrolling');
+  });
 }
 
 function openGroupQr() {
@@ -194,7 +213,7 @@ async function loadProducts() {
   let query = state.client.from('product_feed').select('*',{count:'exact'});
   if (state.categoryId !== 'all') query = query.eq('category_id', Number(state.categoryId));
   const term = state.search.replace(/[%_,().]/g,' ').trim();
-  if (term) query = query.or(`title.ilike.%${term}%,description.ilike.%${term}%,campus.ilike.%${term}%`);
+  if (term) query = query.or(`title.ilike.%${term}%,description.ilike.%${term}%,category_name.ilike.%${term}%,campus.ilike.%${term}%`);
   if(state.minPrice!==null)query=query.gte('price',state.minPrice);
   if(state.maxPrice!==null)query=query.lte('price',state.maxPrice);
   if(state.sort==='price_asc')query=query.order('price',{ascending:true}).order('created_at',{ascending:false});
