@@ -6,9 +6,16 @@ const state = {
   client: null,
   admin: null,
   categories: [],
+  hotSearches: [],
   products: [],
   categoryId: 'all',
   search: '',
+  minPrice: null,
+  maxPrice: null,
+  sort: 'newest',
+  page: 1,
+  pageSize: 24,
+  totalProducts: 0,
   reserveProduct: null,
   adminView: 'overview',
   editingProduct: null,
@@ -128,6 +135,25 @@ async function loadCategories() {
   fillCategorySelect();
 }
 
+async function loadHotSearches() {
+  if (!state.client) return;
+  const {data,error}=await state.client.from('hot_searches').select('*').eq('is_active',true).order('sort_order').order('id');
+  if(error){console.warn('热搜数据尚未初始化：',error.message);state.hotSearches=[];renderHotSearches();return;}
+  state.hotSearches=data||[];
+  renderHotSearches();
+}
+
+function renderHotSearches() {
+  $('hotSearchList').innerHTML=state.hotSearches.map(item=>`<button class="hot-search-tag ${state.search===item.keyword?'active':''}" type="button" data-hot-search="${escapeHtml(item.keyword)}">🔥 ${escapeHtml(item.keyword)}</button>`).join('');
+  $('hotSearches').hidden=!state.hotSearches.length;
+}
+
+function productsPerPage() {
+  if(window.innerWidth<=760)return 12;
+  if(window.innerWidth<=1020)return 18;
+  return 24;
+}
+
 async function loadPublicSettings() {
   const {data,error}=await state.client.from('public_site_settings').select('*').eq('id',true).maybeSingle();
   if (error) throw error;
@@ -160,26 +186,38 @@ function fillCategorySelect() {
 
 async function loadProducts() {
   if (!state.client) return;
+  state.pageSize=productsPerPage();
   $('loading').classList.add('show');
   $('productGrid').innerHTML = '';
   $('emptyState').classList.remove('show');
-  let query = state.client.from('product_feed').select('*').order('created_at',{ascending:false});
+  $('pagination').hidden=true;
+  let query = state.client.from('product_feed').select('*',{count:'exact'});
   if (state.categoryId !== 'all') query = query.eq('category_id', Number(state.categoryId));
   const term = state.search.replace(/[%_,().]/g,' ').trim();
   if (term) query = query.or(`title.ilike.%${term}%,description.ilike.%${term}%,campus.ilike.%${term}%`);
-  const { data, error } = await query;
+  if(state.minPrice!==null)query=query.gte('price',state.minPrice);
+  if(state.maxPrice!==null)query=query.lte('price',state.maxPrice);
+  if(state.sort==='price_asc')query=query.order('price',{ascending:true}).order('created_at',{ascending:false});
+  else if(state.sort==='price_desc')query=query.order('price',{ascending:false}).order('created_at',{ascending:false});
+  else query=query.order('created_at',{ascending:false});
+  const from=(state.page-1)*state.pageSize;
+  const { data, error, count } = await query.range(from,from+state.pageSize-1);
   $('loading').classList.remove('show');
   if (error) {
     $('resultCount').textContent = '加载失败';
     showEmpty('!','商品加载失败',friendlyError(error));
     return;
   }
+  state.totalProducts=count||0;
+  const totalPages=Math.max(1,Math.ceil(state.totalProducts/state.pageSize));
+  if(state.page>totalPages){state.page=totalPages;return loadProducts();}
   state.products = data || [];
   renderProducts();
+  renderPagination();
 }
 
 function renderProducts() {
-  $('resultCount').textContent = `共 ${state.products.length} 件闲置`;
+  $('resultCount').textContent = `共 ${state.totalProducts} 件闲置`;
   if (!state.products.length) {
     showEmpty('🔍','没有找到相关闲置','换个关键词或分类试试吧');
     return;
@@ -197,6 +235,14 @@ function renderProducts() {
     </article>`).join('');
 }
 
+function renderPagination() {
+  const totalPages=Math.ceil(state.totalProducts/state.pageSize);
+  if(totalPages<=1){$('pagination').hidden=true;$('pagination').innerHTML='';return;}
+  const pages=Array.from({length:totalPages},(_,index)=>index+1).map(page=>`<button class="page-button ${page===state.page?'active':''}" type="button" data-page="${page}" aria-label="第 ${page} 页" ${page===state.page?'aria-current="page"':''}>${page}</button>`).join('');
+  $('pagination').innerHTML=`<button class="page-button" type="button" data-page="${state.page-1}" ${state.page===1?'disabled':''}>上一页</button>${pages}<button class="page-button" type="button" data-page="${state.page+1}" ${state.page===totalPages?'disabled':''}>下一页</button>`;
+  $('pagination').hidden=false;
+}
+
 function showEmpty(icon,title,text) {
   $('emptyIcon').textContent = icon;
   $('emptyTitle').textContent = title;
@@ -206,8 +252,10 @@ function showEmpty(icon,title,text) {
 
 function searchFrom(inputId, scroll=false) {
   state.search = $(inputId).value.trim();
+  state.page = 1;
   $('navSearch').value = state.search;
   $('mainSearch').value = state.search;
+  renderHotSearches();
   loadProducts();
   if (scroll) document.querySelector('.main').scrollIntoView({behavior:'smooth'});
 }
@@ -218,9 +266,17 @@ function resetHome(event) {
   event?.preventDefault();
   state.categoryId = 'all';
   state.search = '';
+  state.minPrice = null;
+  state.maxPrice = null;
+  state.sort = 'newest';
+  state.page = 1;
   $('navSearch').value = '';
   $('mainSearch').value = '';
+  $('minPrice').value='';
+  $('maxPrice').value='';
+  $('productSort').value='newest';
   renderCategories();
+  renderHotSearches();
   loadProducts();
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -674,6 +730,7 @@ function subscribeRealtime() {
   state.channel = state.client.channel('market-live')
     .on('postgres_changes',{event:'*',schema:'public',table:'products'},() => { loadProducts(); if(state.adminView==='products'&&$('adminPanelModal').classList.contains('open')) loadAdminProducts(); })
     .on('postgres_changes',{event:'*',schema:'public',table:'categories'},() => { loadCategories().then(loadProducts); if(state.adminView==='categories'&&$('adminPanelModal').classList.contains('open')) loadAdminCategories(); })
+    .on('postgres_changes',{event:'*',schema:'public',table:'hot_searches'},loadHotSearches)
     .subscribe();
 }
 
@@ -702,8 +759,20 @@ function bindEvents() {
     const button = event.target.closest('[data-category]');
     if (!button) return;
     state.categoryId = button.dataset.category;
+    state.page = 1;
     renderCategories();
     loadProducts();
+  });
+  $('hotSearchList').addEventListener('click',event=>{
+    const button=event.target.closest('[data-hot-search]');
+    if(!button)return;
+    state.search=button.dataset.hotSearch;
+    state.page=1;
+    $('navSearch').value=state.search;
+    $('mainSearch').value=state.search;
+    renderHotSearches();
+    loadProducts();
+    document.querySelector('.main').scrollIntoView({behavior:'smooth'});
   });
   $('productGrid').addEventListener('click',event => {
     const card = event.target.closest('[data-product-id]');
@@ -718,6 +787,17 @@ function bindEvents() {
   });
   $('navSearchButton').addEventListener('click',() => searchFrom('navSearch',true));
   $('mainSearchButton').addEventListener('click',() => searchFrom('mainSearch'));
+  $('applyPriceFilter').addEventListener('click',()=>{
+    const minText=$('minPrice').value.trim(),maxText=$('maxPrice').value.trim();
+    const min=minText===''?null:Number(minText),max=maxText===''?null:Number(maxText);
+    if((min!==null&&(!Number.isFinite(min)||min<0))||(max!==null&&(!Number.isFinite(max)||max<0)))return toast('请输入正确的非负价格',false);
+    if(min!==null&&max!==null&&min>max)return toast('最低价格不能高于最高价格',false);
+    state.minPrice=min;state.maxPrice=max;state.page=1;loadProducts();
+  });
+  $('clearPriceFilter').addEventListener('click',()=>{$('minPrice').value='';$('maxPrice').value='';state.minPrice=null;state.maxPrice=null;state.page=1;loadProducts();});
+  ['minPrice','maxPrice'].forEach(id=>$(id).addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();$('applyPriceFilter').click();}}));
+  $('productSort').addEventListener('change',event=>{state.sort=event.target.value;state.page=1;loadProducts();});
+  $('pagination').addEventListener('click',event=>{const button=event.target.closest('[data-page]');if(!button||button.disabled)return;state.page=Number(button.dataset.page);loadProducts().then(()=>document.querySelector('.section-head').scrollIntoView({behavior:'smooth',block:'start'}));});
   $('groupButton').addEventListener('click',openGroupQr);
   document.querySelectorAll('[data-admin-view]').forEach(button => button.addEventListener('click',() => {state.adminView=button.dataset.adminView;loadAdminView();}));
   $('adminContent').addEventListener('click',event => {
@@ -740,6 +820,8 @@ function bindEvents() {
   });
   document.addEventListener('click',event => { if(!event.target.closest('#adminSession')) $('adminSession').classList.remove('open'); });
   document.addEventListener('keydown',event => { if(event.key==='Escape'){state.pendingConfirm=null;document.querySelectorAll('.modal-backdrop.open').forEach(m=>closeModal(m.id));closeReserve();} });
+  let currentPageSize=productsPerPage();
+  window.addEventListener('resize',debounce(()=>{const next=productsPerPage();if(next!==currentPageSize){currentPageSize=next;state.page=1;loadProducts();}},250));
 }
 
 async function init() {
@@ -761,6 +843,7 @@ async function init() {
     await restoreAdminSession();
     await loadPublicSettings();
     await loadCategories();
+    await loadHotSearches();
     await loadProducts();
     subscribeRealtime();
   } catch (error) {
