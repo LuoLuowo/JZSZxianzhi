@@ -43,7 +43,7 @@ function escapeHtml(value='') {
   return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-// 校园墙没有上传头像时，用昵称稳定生成一枚卡通头像；同一昵称每次看到的头像一致。
+// 投稿区没有上传头像时，用昵称稳定生成一枚卡通头像；同一昵称每次看到的头像一致。
 const WALL_AVATARS = ['🐼','🐰','🦊','🐱','🐻','🐸','🐶','🐯','🐨','🦁'];
 const WALL_AVATAR_COLORS = ['#dceefc','#ffe5d5','#e7defd','#d8f3eb','#fff0c7','#dfeaff','#fde0e9','#e2f0cf','#f5e0fa','#dcebe7'];
 function wallAvatar(nickname='') {
@@ -426,7 +426,7 @@ async function loadWallPosts() {
   if(!state.client)return;
   $('wallLoading').classList.add('show');
   $('wallEmpty').classList.remove('show');
-  $('wallEmpty').querySelector('.empty-title').textContent='校园墙暂时还没有内容';
+  $('wallEmpty').querySelector('.empty-title').textContent='投稿区暂时还没有内容';
   $('wallEmpty').lastElementChild.textContent='来发布第一条校园动态吧';
   const from=(state.wallPage-1)*state.wallPageSize;
   const {data,error,count}=await state.client.from('public_campus_wall_posts').select('*',{count:'exact'}).order('is_pinned',{ascending:false}).order('created_at',{ascending:false}).range(from,from+state.wallPageSize-1);
@@ -435,8 +435,8 @@ async function loadWallPosts() {
   if(error){
     $('wallFeed').innerHTML='';
     $('wallEmpty').classList.add('show');
-    $('wallEmpty').querySelector('.empty-title').textContent='校园墙暂未开放';
-    $('wallEmpty').lastElementChild.textContent=/public_campus_wall_posts|schema cache|relation/i.test(error.message)?'管理员需要先执行校园墙数据库升级 SQL。':friendlyError(error);
+    $('wallEmpty').querySelector('.empty-title').textContent='投稿区暂未开放';
+    $('wallEmpty').lastElementChild.textContent=/public_campus_wall_posts|schema cache|relation/i.test(error.message)?'管理员需要先执行投稿区数据库升级 SQL。':friendlyError(error);
     return;
   }
   state.wallPosts=data||[];
