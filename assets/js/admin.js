@@ -3,7 +3,7 @@ const SUPABASE_URL = 'https://znrnaeebnuadbxyqaild.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable__uNRNeHvjKIMfIIdhQod6Q_KVqpmE3F';
 const db = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 const $ = id => document.getElementById(id);
-const state = {user:null,view:'overview',search:'',products:[],reservations:[],codes:[],hotSearches:[],hotSearchError:null,admins:[],settings:{admin_wechat:'',announcement:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},resources:{},confirmAction:null,editingProduct:null,channel:null};
+const state = {user:null,view:'overview',search:'',products:[],reservations:[],codes:[],hotSearches:[],hotSearchError:null,admins:[],settings:{admin_wechat:'',announcement:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},resources:{},confirmAction:null,editingProduct:null,channel:null,presenceChannel:null,onlineCount:0};
 const viewMeta = {
   overview:['数据概览','查看平台实时运营数据'],products:['商品管理','查询商品、库存、卖家微信和商品码'],
   reservations:['想要记录','查询买家联系方式并处理成交'],codes:['对接码查询','查询当前和历史商品码'],
@@ -14,6 +14,8 @@ const reservationStatus = {pending:'待处理',confirmed:'已成交',cancelled:'
 const esc = (value='') => String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const dateText = value => value ? new Date(value).toLocaleString('zh-CN') : '-';
 const money = value => Number(value||0).toLocaleString('zh-CN',{maximumFractionDigits:2});
+const priceText = product => product.price_type==='negotiable'?'面议':product.price_type==='at_most'?`¥${money(product.price)} 及以下`:`¥${money(product.price)}`;
+function browserClientId(){const key='jzsf-browser-client-id';let id=localStorage.getItem(key);if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id||'')){id=crypto.randomUUID();localStorage.setItem(key,id);}return id;}
 const normalize = value => String(value||'').toLowerCase().trim();
 const formatBytes = value => {const bytes=Number(value||0);if(bytes<1024)return `${bytes} B`;if(bytes<1048576)return `${(bytes/1024).toFixed(1)} KB`;if(bytes<1073741824)return `${(bytes/1048576).toFixed(2)} MB`;return `${(bytes/1073741824).toFixed(2)} GB`;};
 
@@ -59,7 +61,7 @@ async function verifySession(session) {
 async function showDashboard() {
   $('loginView').hidden=true; $('adminShell').hidden=false;
   $('adminAccount').textContent=state.user.email;
-  await refreshData(); subscribeRealtime();
+  await refreshData(); subscribeRealtime(); subscribePresence();
 }
 
 async function login(event) {
@@ -121,7 +123,7 @@ function renderOverview() {
   const pending=state.reservations.filter(r=>r.status==='pending').length;
   const confirmed=state.reservations.filter(r=>r.status==='confirmed').length;
   $('adminPageContent').innerHTML=`<div class="dashboard-stats">
-    ${[['商品总数',state.products.length],['在售商品',active],['剩余库存',stock],['累计商品码',state.codes.length],['想要记录',state.reservations.length],['待处理',pending],['已成交',confirmed],['近期热搜',state.hotSearches.filter(item=>item.is_active).length],['管理员',state.admins.length]].map(item=>`<div class="dashboard-card"><span>${item[0]}</span><strong>${item[1]}</strong></div>`).join('')}
+    ${[['实时在线',state.onlineCount],['商品总数',state.products.length],['在售商品',active],['剩余库存',stock],['累计商品码',state.codes.length],['想要记录',state.reservations.length],['待处理',pending],['已成交',confirmed],['近期热搜',state.hotSearches.filter(item=>item.is_active).length],['管理员',state.admins.length]].map(item=>`<div class="dashboard-card"><span>${item[0]}</span><strong>${item[1]}</strong></div>`).join('')}
   </div><section class="dashboard-section"><h2>前台展示设置</h2><form id="siteSettingsForm"><div class="field-group"><label class="label" for="managementWechatInput">卖方管理微信</label><input class="field" id="managementWechatInput" maxlength="120" value="${esc(state.settings.admin_wechat||'')}" placeholder="买家提交想要后统一显示此管理员微信"><div class="hint">商品里的卖家微信仅供管理员内部查看，不会提供给买家。</div></div><div class="field-group"><label class="label" for="heroSubtitleInput">首页标题下方描述</label><textarea class="field" id="heroSubtitleInput" maxlength="500" placeholder="首页主标题下方的简介文字">${esc(state.settings.hero_subtitle||'')}</textarea></div><div class="field-group"><label class="label" for="announcementInput">公告内容</label><textarea class="field" id="announcementInput" maxlength="2000" placeholder="留空则不显示公告">${esc(state.settings.announcement||'')}</textarea></div><div class="field-group"><label class="label" for="introductionContentInput">网站介绍文字</label><div class="field rich-editor" id="introductionContentInput" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="支持换行；选中文字后按 Ctrl+B 可加粗"></div><div class="hint">支持换行；选中文字后按 Ctrl+B 可加粗。</div></div><div class="field-row"><div class="field-group"><label class="label" for="introductionImageInput">介绍图片 URL</label><input class="field" id="introductionImageInput" type="url" value="${esc(state.settings.introduction_image_url||'')}" placeholder="任意可显示的图片直链"></div><div class="field-group"><label class="label" for="introductionImageFile">上传介绍图片</label><input class="field" id="introductionImageFile" type="file" accept="image/*"><div class="hint">本地图片会压缩为约 150KB 以内的 WebP；上传文件优先于 URL。</div></div></div>${state.settings.introduction_image_url?`<div class="settings-qr-current"><img class="settings-qr-preview" src="${esc(state.settings.introduction_image_url)}" alt="当前网站介绍图片"><button class="btn btn-danger btn-small" type="button" data-delete-introduction-image>删除图片</button></div>`:''}<button class="btn btn-primary" type="submit">保存前台展示设置</button></form></section><section class="dashboard-section"><h2>最近想要记录</h2>${reservationTable(state.reservations.slice(0,5),false)}</section>`;
   $('introductionContentInput').innerHTML=sanitizeIntroductionHtml(state.settings.introduction_content||'');
 }
@@ -132,7 +134,7 @@ function table(headers,rows) { return `<div class="data-card"><table class="data
 
 function renderProducts() {
   const data=filtered(state.products,p=>[p.title,p.description,p.connection_code,p.campus,p.seller_contact,p.categories?.name,p.status]);
-  $('adminPageContent').innerHTML=table(['商品码 / 商品','价格与分类','库存','卖家微信','状态 / 时间','操作'],data.map(p=>`<tr><td><div class="code">${esc(p.connection_code)}</div><strong>${esc(p.title)}</strong><div class="hint">${esc(p.description)}</div></td><td>¥${money(p.price)}<br>${esc(p.categories?.icon||'📦')} ${esc(p.categories?.name||'未分类')}<br>${esc(p.campus)} · ${esc(p.condition)}</td><td>总数 ${p.quantity}<br>已售 ${p.sold_quantity}<br>剩余 ${p.quantity-p.sold_quantity}</td><td class="private-data">${esc(p.seller_contact||'未填写')}</td><td>${productStatus[p.status]||p.status}<br><span class="hint">${dateText(p.created_at)}</span></td><td><div class="actions"><button class="btn btn-ghost btn-small" data-edit-product="${p.id}">编辑</button>${p.status!=='sold'?`<button class="btn btn-primary btn-small" data-product-status="sold" data-id="${p.id}">标记售罄</button>`:''}${p.status!=='removed'?`<button class="btn btn-ghost btn-small" data-product-status="removed" data-id="${p.id}">下架</button>`:`<button class="btn btn-ghost btn-small" data-product-status="available" data-id="${p.id}">上架</button>`}<button class="btn btn-danger btn-small" data-delete-product="${p.id}">删除</button></div></td></tr>`).join(''));
+  $('adminPageContent').innerHTML=table(['商品码 / 商品','价格与分类','库存','卖家微信','状态 / 时间','操作'],data.map(p=>`<tr><td><div class="code">${esc(p.connection_code)}</div><strong>${p.is_pinned?'🔝 ':''}${esc(p.title)}</strong><div class="hint">${esc(p.description)}</div></td><td>${priceText(p)}<br>${esc(p.categories?.icon||'📦')} ${esc(p.categories?.name||'未分类')}<br>${esc(p.campus)} · ${esc(p.condition)}</td><td>总数 ${p.quantity}<br>已售 ${p.sold_quantity}<br>剩余 ${p.quantity-p.sold_quantity}</td><td class="private-data">${esc(p.seller_contact||'未填写')}</td><td>${productStatus[p.status]||p.status}<br><span class="hint">${dateText(p.created_at)}</span></td><td><div class="actions"><button class="btn btn-ghost btn-small" data-edit-product="${p.id}">编辑</button>${p.status!=='sold'?`<button class="btn btn-primary btn-small" data-product-status="sold" data-id="${p.id}">标记售罄</button>`:''}${p.status!=='removed'?`<button class="btn btn-ghost btn-small" data-product-status="removed" data-id="${p.id}">下架</button>`:`<button class="btn btn-ghost btn-small" data-product-status="available" data-id="${p.id}">上架</button>`}<button class="btn btn-danger btn-small" data-delete-product="${p.id}">删除</button></div></td></tr>`).join(''));
 }
 
 function reservationTable(records,actions=true) {
@@ -194,6 +196,8 @@ function openProductEditor(id) {
   $('editProductTitle').value=product.title||'';
   $('editProductDescription').value=product.description||'';
   $('editProductPrice').value=product.price;
+  $('editProductPriceType').value=product.price_type||'fixed';
+  updateEditProductPriceInput();
   $('editProductCondition').value=product.condition||'轻微使用痕迹';
   $('editProductCategory').innerHTML=state.categories.map(category=>`<option value="${category.id}">${esc(category.icon)} ${esc(category.name)}</option>`).join('');
   $('editProductCategory').value=product.category_id;
@@ -244,7 +248,10 @@ async function saveProductEdit(event) {
     let finalSold=soldQuantity;
     if(status==='sold')finalSold=quantity;
     if(status==='available'&&finalSold>=quantity)throw new Error('在售商品的已售数量必须小于商品总数量');
-    const payload={title:$('editProductTitle').value.trim(),description:$('editProductDescription').value.trim(),price:Number($('editProductPrice').value),condition:$('editProductCondition').value,category_id:Number($('editProductCategory').value),quantity,sold_quantity:finalSold,seller_contact:$('editSellerContact').value.trim()||null,status,image_url:imageUrl,is_pinned:$('editProductPinned').checked};
+    const priceType=$('editProductPriceType').value;
+    const price=priceType==='negotiable'?0:Number($('editProductPrice').value);
+    if(!Number.isFinite(price)||price<0)throw new Error('请输入正确的价格');
+    const payload={title:$('editProductTitle').value.trim(),description:$('editProductDescription').value.trim(),price,price_type:priceType,condition:$('editProductCondition').value,category_id:Number($('editProductCategory').value),quantity,sold_quantity:finalSold,seller_contact:$('editSellerContact').value.trim()||null,status,image_url:imageUrl,is_pinned:$('editProductPinned').checked};
     const {error}=await db.from('products').update(payload).eq('id',product.id);
     if(error)throw error;
     const oldPath=storagePath(product.image_url);
@@ -285,7 +292,7 @@ function bindEvents() {
   $('adminSearch').addEventListener('input',()=>{state.search=$('adminSearch').value;render();});
   $('adminSearch').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();state.search=event.target.value;render();}});
   $('adminConfirmCancel').addEventListener('click',closeConfirm); $('adminConfirmClose').addEventListener('click',closeConfirm); $('adminConfirmAction').addEventListener('click',runConfirm);
-  $('adminProductForm').addEventListener('submit',saveProductEdit); $('adminProductClose').addEventListener('click',closeProductEditor);
+  $('adminProductForm').addEventListener('submit',saveProductEdit); $('adminProductClose').addEventListener('click',closeProductEditor); $('editProductPriceType').addEventListener('change',updateEditProductPriceInput);
   $('adminConfirmModal').addEventListener('click',event=>{if(event.target===$('adminConfirmModal'))closeConfirm();});
   $('adminPageContent').addEventListener('submit',event=>{event.preventDefault();if(event.target.id==='siteSettingsForm')return saveSiteSettings(event);if(event.target.id==='grantAdminForm')return grantAdmin(event);if(event.target.id==='addCategoryForm')return addCategory(event.target);if(event.target.id==='addHotSearchForm')return addHotSearch(event.target);});
   $('adminPageContent').addEventListener('click',event=>{
@@ -307,6 +314,8 @@ function bindEvents() {
 }
 
 function subscribeRealtime() { if(state.channel)return;state.channel=db.channel('admin-dashboard').on('postgres_changes',{event:'*',schema:'public',table:'products'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'reservations'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'categories'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'hot_searches'},refreshData).subscribe(); }
+function subscribePresence(){if(state.presenceChannel)return;state.presenceChannel=db.channel('site-online',{config:{presence:{key:browserClientId()}}}).on('presence',{event:'sync'},()=>{state.onlineCount=Object.keys(state.presenceChannel.presenceState()).length;if(state.view==='overview'&&!$('adminShell').hidden)renderOverview();}).subscribe(status=>{if(status==='SUBSCRIBED')state.presenceChannel.track({online_at:new Date().toISOString()});});}
+function updateEditProductPriceInput(){const mode=$('editProductPriceType').value;const input=$('editProductPrice');input.disabled=mode==='negotiable';input.required=mode!=='negotiable';$('editProductPriceLabel').textContent=mode==='at_most'?'最高价格（元）':mode==='negotiable'?'价格（面议）':'价格（元）';}
 
 async function init() {
   const theme=localStorage.getItem('jzsf-admin-theme')||'light';document.documentElement.dataset.theme=theme;$('adminThemeButton').textContent=theme==='dark'?'☀️':'🌙';bindEvents();

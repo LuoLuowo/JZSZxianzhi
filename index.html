@@ -104,8 +104,9 @@
         <form id="productForm">
           <div class="field-group"><label class="label" for="productTitle">商品标题</label><input class="field" id="productTitle" maxlength="120" required placeholder="如：高等数学教材"></div>
           <div class="field-group"><label class="label" for="productDescription">详细描述（可选）</label><textarea class="field" id="productDescription" maxlength="3000" placeholder="成色、配件、交易说明等"></textarea></div>
+          <div class="field-group"><label class="label" for="productPriceType">价格方式</label><select class="field" id="productPriceType"><option value="fixed">固定价格</option><option value="negotiable">面议</option><option value="at_most">多少元及以下</option></select></div>
           <div class="field-row">
-            <div class="field-group"><label class="label" for="productPrice">价格（元）</label><input class="field" id="productPrice" type="number" min="0" max="99999999" step="0.01" required></div>
+            <div class="field-group"><label class="label" id="productPriceLabel" for="productPrice">价格（元）</label><input class="field" id="productPrice" type="number" min="0" max="99999999" step="0.01" required></div>
             <div class="field-group"><label class="label" for="productCondition">成色</label><select class="field" id="productCondition" required><option value="">请选择</option><option>全新</option><option>几乎全新</option><option>轻微使用痕迹</option><option>明显使用痕迹</option></select></div>
           </div>
           <div class="field-group"><label class="label" for="productCategory">分类</label><select class="field" id="productCategory" required></select></div>

@@ -20,6 +20,7 @@
 │  ├─ upgrade-resource-dashboard.sql  二维码上传与资源统计升级脚本
 │  └─ upgrade-management-wechat.sql  统一管理微信升级脚本
 │  └─ upgrade-site-introduction-and-pinning.sql  网站介绍、副标题与商品置顶升级脚本
+│  └─ upgrade-online-rate-limit-and-pricing.sql  在线人数、预定限流与价格方式升级脚本
 ├─ supabase.sql              数据库全量重建脚本
 └─ README.md                 本说明
 ```
@@ -59,6 +60,8 @@
 
 首页公告、首页标题下方描述和“网站介绍”均在后台“数据概览”中编辑。“网站介绍”支持换行文字、图片 URL 或本地上传图片；已有数据库执行 `supabase/upgrade-site-introduction-and-pinning.sql` 即可启用，也会补齐商品置顶字段，不会删除现有数据。
 
+已有数据库如需启用“实时在线人数”、同一浏览器五分钟最多提交三次想要，以及“固定价格 / 面议 / 多少元及以下”三种价格方式，请执行 `supabase/upgrade-online-rate-limit-and-pricing.sql`。
+
 网站介绍图片支持后台上传本地图片或填写 URL。后台“资源占用”页面每 15 秒更新 Supabase Storage、数据库、图片数量和合计容量；启用该页面需执行 `supabase/upgrade-resource-dashboard.sql`。
 
 添加其他管理员前，先在 Supabase **Authentication → Users** 创建并确认该邮箱账号，然后进入独立后台的“管理员管理”，输入邮箱完成授权。
@@ -92,6 +95,8 @@ http://localhost:8080
 - 管理员确认成交时自动扣减库存，取消已成交记录时自动返还库存
 - 管理员确认、取消和删除想要记录；危险操作均需二次确认
 - 管理员可以在商品编辑页勾选“🔝 置顶商品”，置顶商品会优先展示在前台
+- 后台数据概览显示实时在线浏览器数；预定接口会限制同一浏览器五分钟内最多提交三次
+- 商品价格支持固定金额、面议和“多少元及以下”
 - 本地上传商品图和网站介绍图会压缩为 WebP，目标大小约 150KB 以内；外部 URL 图片直接引用，不占用 Storage
 - 商品会自动分配 5 位数字对接码；买家提交后可复制对接码并查看统一的卖方管理微信
 - Products/Categories Realtime 自动刷新

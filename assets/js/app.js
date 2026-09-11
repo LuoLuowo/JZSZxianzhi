@@ -22,7 +22,8 @@ const state = {
   editingCategory: null,
   pendingConfirm: null,
   publicSettings: {announcement:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},
-  channel: null
+  channel: null,
+  presenceChannel: null
 };
 
 const $ = id => document.getElementById(id);
@@ -35,6 +36,22 @@ function escapeHtml(value='') {
 
 function money(value) {
   return Number(value).toLocaleString('zh-CN',{minimumFractionDigits:Number(value)%1?2:0,maximumFractionDigits:2});
+}
+
+function priceText(product) {
+  if(product.price_type==='negotiable')return '面议';
+  if(product.price_type==='at_most')return `¥${money(product.price)} 及以下`;
+  return `¥${money(product.price)}`;
+}
+
+function browserClientId() {
+  const key='jzsf-browser-client-id';
+  let id=localStorage.getItem(key);
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id||'')){
+    id=crypto.randomUUID();
+    localStorage.setItem(key,id);
+  }
+  return id;
 }
 
 function friendlyError(error) {
@@ -272,7 +289,7 @@ function renderProducts() {
       <div class="product-media">${productMedia(p)}${p.is_pinned?'<span class="pin-badge">🔝 置顶</span>':''}<span class="status status-${p.status}">${statusText[p.status]}</span></div>
       <div class="product-body">
         <h3 class="product-title">${escapeHtml(p.title)}</h3>
-        <div class="product-row"><span class="price"><small>¥</small>${money(p.price)}</span><span class="condition">${escapeHtml(p.condition)}</span></div>
+        <div class="product-row"><span class="price">${priceText(p)}</span><span class="condition">${escapeHtml(p.condition)}</span></div>
         <p class="product-description">${escapeHtml(p.description || '暂无详细描述')}</p>
         <div class="product-footer"><span class="meta">${escapeHtml(p.category_icon || '📦')} ${escapeHtml(p.category_name || '其他')}</span><span class="stock-corner">剩余 ${p.available_quantity} 件</span></div>
       </div>
@@ -336,7 +353,7 @@ function openReserve(product) {
   state.reserveProduct = product;
   $('reserveForm').reset();
   $('reserveError').textContent = '';
-  $('reserveSummary').innerHTML = `<div class="product-media">${productMedia(product,true)}</div><div class="reserve-info"><h4>${escapeHtml(product.title)}</h4><div class="price"><small>¥</small>${money(product.price)}</div><div class="detail-stock">剩余 ${product.available_quantity} 件</div></div><div class="detail-description">${escapeHtml(product.description || '暂无详细描述')}</div>`;
+  $('reserveSummary').innerHTML = `<div class="product-media">${productMedia(product,true)}</div><div class="reserve-info"><h4>${escapeHtml(product.title)}</h4><div class="price">${priceText(product)}</div><div class="detail-stock">剩余 ${product.available_quantity} 件</div></div><div class="detail-description">${escapeHtml(product.description || '暂无详细描述')}</div>`;
   $('reserveBackdrop').classList.add('open');
   $('reserveDrawer').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -362,7 +379,8 @@ async function submitReservation(event) {
     p_product_id:state.reserveProduct.id,
     p_buyer_name:name,
     p_contact:contact,
-    p_note:''
+    p_note:'',
+    p_client_id:browserClientId()
   });
   busy(button,false);
   if (error) {
@@ -526,6 +544,8 @@ function openProductForm(product=null) {
   $('productTitle').value = product?.title || '';
   $('productDescription').value = product?.description || '';
   $('productPrice').value = product?.price ?? '';
+  $('productPriceType').value = product?.price_type || 'fixed';
+  updateProductPriceInput();
   $('productCondition').value = product?.condition || '';
   $('productCategory').value = product?.category_id || '';
   $('productQuantity').value = product?.quantity || 1;
@@ -602,8 +622,11 @@ async function submitProduct(event) {
       if (!['http:','https:'].includes(parsed.protocol)) throw new Error('图片 URL 必须以 http 或 https 开头');
       uploaded={url:parsed.href,path:null,size:0,external:true};
     }
+    const priceType=$('productPriceType').value;
+    const price=priceType==='negotiable'?0:Number($('productPrice').value);
+    if(!Number.isFinite(price)||price<0)throw new Error('请输入正确的价格');
     const payload = {
-      title:$('productTitle').value.trim(),description:$('productDescription').value.trim(),price:Number($('productPrice').value),
+      title:$('productTitle').value.trim(),description:$('productDescription').value.trim(),price,price_type:priceType,
       condition:$('productCondition').value,campus:state.editingProduct?.campus || '焦作师专校内',category_id:Number($('productCategory').value),
       quantity:Number($('productQuantity').value),seller_contact:$('sellerContact').value.trim() || null,is_demo:false
     };
@@ -625,6 +648,8 @@ async function submitProduct(event) {
       $('productCondition').value=condition;
       $('sellerContact').value=seller;
       $('productQuantity').value=1;
+      $('productPriceType').value='fixed';
+      updateProductPriceInput();
       $('productQuantity').min=1;
       $('productFormTitle').textContent='继续发布闲置';
       $('imageHint').textContent='本地图片会压缩为 WebP，目标大小约 150KB 以内。';
@@ -779,6 +804,20 @@ function subscribeRealtime() {
     .subscribe();
 }
 
+function subscribePresence() {
+  if(!state.client||state.presenceChannel)return;
+  state.presenceChannel=state.client.channel('site-online',{config:{presence:{key:browserClientId()}}})
+    .subscribe(status=>{if(status==='SUBSCRIBED')state.presenceChannel.track({online_at:new Date().toISOString()});});
+}
+
+function updateProductPriceInput() {
+  const mode=$('productPriceType').value;
+  const input=$('productPrice');
+  input.disabled=mode==='negotiable';
+  input.required=mode!=='negotiable';
+  $('productPriceLabel').textContent=mode==='at_most'?'最高价格（元）':mode==='negotiable'?'价格（面议）':'价格（元）';
+}
+
 function bindEvents() {
   $('themeButton').addEventListener('click',() => applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
   $('homeLink').addEventListener('click',resetHome);
@@ -791,6 +830,7 @@ function bindEvents() {
   $('reserveSummary').addEventListener('click',event => {const image=event.target.closest('[data-full-image]');if(image)openImageLightbox(image.dataset.fullImage,image.alt);});
   $('copyConnectionCode').addEventListener('click',copyConnectionCode);
   $('productForm').addEventListener('submit',submitProduct);
+  $('productPriceType').addEventListener('change',updateProductPriceInput);
   $('categoryForm').addEventListener('submit',submitCategory);
   $('addProductButton').addEventListener('click',() => openProductForm());
   $('closeReserve').addEventListener('click',closeReserve);
@@ -883,6 +923,7 @@ async function init() {
   }
   state.client = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
   window.supabaseClient = state.client;
+  subscribePresence();
   state.client.auth.onAuthStateChange((_event,session) => {
     if (!session) { state.admin=null; renderAdminState(); }
   });

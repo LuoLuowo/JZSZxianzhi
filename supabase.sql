@@ -10,6 +10,7 @@ drop view if exists public.public_profiles cascade;
 drop view if exists public.public_site_settings cascade;
 drop function if exists public.reserve_product(uuid, text, text) cascade;
 drop function if exists public.reserve_product(uuid, text, text, text) cascade;
+drop function if exists public.reserve_product(uuid, text, text, text, uuid) cascade;
 drop function if exists public.admin_set_reservation_status(uuid, text) cascade;
 drop function if exists public.admin_set_user_disabled(uuid, boolean) cascade;
 drop function if exists public.is_active_user() cascade;
@@ -22,6 +23,7 @@ drop function if exists public.admin_grant_admin(text) cascade;
 drop function if exists public.admin_list_admins() cascade;
 drop function if exists public.admin_resource_usage() cascade;
 drop table if exists public.reservations cascade;
+drop table if exists public.reservation_rate_limits cascade;
 drop table if exists public.products cascade;
 drop table if exists public.hot_searches cascade;
 drop table if exists public.categories cascade;
@@ -102,6 +104,7 @@ create table public.products (
   title text not null check (char_length(title) between 1 and 120),
   description text not null default '' check (char_length(description) <= 3000),
   price numeric(10,2) not null check (price >= 0),
+  price_type text not null default 'fixed' check (price_type in ('fixed','negotiable','at_most')),
   condition text not null check (condition in ('全新','几乎全新','轻微使用痕迹','明显使用痕迹')),
   campus text not null check (char_length(campus) between 1 and 80),
   category_id bigint not null references public.categories(id) on delete restrict,
@@ -147,11 +150,19 @@ create table public.reservations (
   created_at timestamptz not null default now()
 );
 
+create table public.reservation_rate_limits (
+  client_id uuid primary key,
+  window_started_at timestamptz not null default now(),
+  submit_count smallint not null default 0 check (submit_count between 0 and 3),
+  updated_at timestamptz not null default now()
+);
+
 create index products_category_idx on public.products(category_id);
 create index products_created_idx on public.products(created_at desc);
 create index products_pinned_created_idx on public.products(is_pinned desc, created_at desc);
 create index reservations_product_idx on public.reservations(product_id);
 create index reservations_created_idx on public.reservations(created_at desc);
+create index reservation_rate_limits_updated_idx on public.reservation_rate_limits(updated_at);
 
 insert into public.site_settings(id,admin_wechat) values(true,'') on conflict (id) do nothing;
 
@@ -198,7 +209,8 @@ create or replace function public.reserve_product(
   p_product_id uuid,
   p_buyer_name text,
   p_contact text,
-  p_note text default ''
+  p_note text default '',
+  p_client_id uuid default null
 )
 returns jsonb
 language plpgsql
@@ -212,7 +224,10 @@ declare
   v_reservation_id uuid;
   v_connection_code text;
   v_management_wechat text;
+  v_window_started_at timestamptz;
+  v_submit_count smallint;
 begin
+  if p_client_id is null then raise exception '浏览器标识缺失，请刷新页面后重试'; end if;
   if nullif(btrim(p_buyer_name),'') is null then raise exception '请填写姓名'; end if;
   if char_length(btrim(p_buyer_name)) > 40 then raise exception '姓名过长'; end if;
   if nullif(btrim(p_contact),'') is null then raise exception '请填写联系方式'; end if;
@@ -223,6 +238,16 @@ begin
   if not found then raise exception '商品不存在'; end if;
   if v_status <> 'available' or v_sold_quantity >= v_quantity then raise exception '该商品已售罄或不可购买'; end if;
 
+  insert into public.reservation_rate_limits(client_id) values(p_client_id) on conflict(client_id) do nothing;
+  select window_started_at,submit_count into v_window_started_at,v_submit_count from public.reservation_rate_limits where client_id=p_client_id for update;
+  if v_window_started_at <= now()-interval '5 minutes' then
+    update public.reservation_rate_limits set window_started_at=now(),submit_count=1,updated_at=now() where client_id=p_client_id;
+  elsif v_submit_count >= 3 then
+    raise exception '提交过于频繁：同一浏览器 5 分钟内最多提交 3 次想要，请稍后再试';
+  else
+    update public.reservation_rate_limits set submit_count=submit_count+1,updated_at=now() where client_id=p_client_id;
+  end if;
+
   insert into public.reservations(product_id,buyer_name,contact,note)
   values (p_product_id,btrim(p_buyer_name),btrim(p_contact),coalesce(btrim(p_note),''))
   returning id into v_reservation_id;
@@ -232,8 +257,8 @@ begin
 end;
 $$;
 
-revoke all on function public.reserve_product(uuid,text,text,text) from public;
-grant execute on function public.reserve_product(uuid,text,text,text) to anon, authenticated;
+revoke all on function public.reserve_product(uuid,text,text,text,uuid) from public;
+grant execute on function public.reserve_product(uuid,text,text,text,uuid) to anon, authenticated;
 
 -- 6. 管理员确认或取消预定，并同步商品状态
 create or replace function public.admin_set_reservation_status(p_reservation_id uuid, p_status text)
@@ -292,6 +317,7 @@ alter table public.hot_searches enable row level security;
 alter table public.site_settings enable row level security;
 alter table public.products enable row level security;
 alter table public.reservations enable row level security;
+alter table public.reservation_rate_limits enable row level security;
 
 create policy profiles_admin_read on public.profiles for select to authenticated
   using ((select public.is_admin()) or id = (select auth.uid()));
@@ -342,7 +368,7 @@ create view public.product_feed
 with (security_invoker = false)
 as
 select
-  p.id,p.title,p.description,p.price,p.condition,p.campus,p.category_id,p.status,
+  p.id,p.title,p.description,p.price,p.price_type,p.condition,p.campus,p.category_id,p.status,
   p.image_url,p.is_demo,p.quantity,p.sold_quantity,p.is_pinned,
   greatest(p.quantity-p.sold_quantity,0) as available_quantity,
   count(r.id) filter (where r.status in ('pending','confirmed'))::integer as wanted_count,
