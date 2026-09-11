@@ -428,13 +428,19 @@ function productShareUrl(productId) {
 async function shareProductDirectly() {
   if(!state.reserveProduct)return;
   const product=state.reserveProduct;
-  const shareData={title:product.title,text:'焦专好物平台发现一个校园闲置好物，点击查看详情。',url:productShareUrl(product.id)};
-  if(navigator.share){
-    try{await navigator.share(shareData);return;}
-    catch(error){if(error?.name==='AbortError')return;}
-  }
-  try{await navigator.clipboard.writeText(shareData.url);toast('商品链接已复制，可粘贴发送给微信好友');}
-  catch{toast('当前浏览器不支持直接分享，请使用浏览器分享菜单',false);}
+  const price=product.price_type==='negotiable'?(Number(product.price)>0?`面议（参考价 ¥${money(product.price)}）`:'价格面议'):product.price_type==='at_most'?`¥${money(product.price)} 及以下`:`¥${money(product.price)}`;
+  const message=`【焦专好物平台】发现一个校园闲置好物\n${product.title}\n价格：${price}\n${product.condition||'成色良好'} · 剩余 ${product.available_quantity} 件\n感兴趣可以点击链接查看详情：\n${productShareUrl(product.id)}`;
+  try{
+    if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(message);
+    else{
+      const input=document.createElement('textarea');
+      input.value=message;input.setAttribute('readonly','');input.style.cssText='position:fixed;opacity:0;pointer-events:none';
+      document.body.appendChild(input);input.select();
+      if(!document.execCommand('copy'))throw new Error('复制失败');
+      input.remove();
+    }
+    toast('分享文案已复制，粘贴发送给微信好友');
+  }catch{toast('复制失败，请使用浏览器的复制功能',false);}
 }
 
 async function openSharedProductFromUrl() {
