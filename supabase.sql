@@ -22,6 +22,8 @@ drop function if exists public.assign_product_code() cascade;
 drop function if exists public.admin_grant_admin(text) cascade;
 drop function if exists public.admin_list_admins() cascade;
 drop function if exists public.admin_resource_usage() cascade;
+drop function if exists public.track_site_visitor(uuid) cascade;
+drop function if exists public.admin_visitor_count() cascade;
 drop function if exists public.admin_review_submission(uuid, text) cascade;
 drop function if exists public.submit_product_submission(text,text,numeric,text,text,bigint,integer,text,text,uuid) cascade;
 drop function if exists public.validate_seller_contact() cascade;
@@ -31,6 +33,7 @@ drop table if exists public.reservations cascade;
 drop table if exists public.reservation_rate_limits cascade;
 drop table if exists public.submission_rate_limits cascade;
 drop table if exists public.admin_notifications cascade;
+drop table if exists public.site_visitors cascade;
 drop table if exists public.product_submissions cascade;
 drop table if exists public.products cascade;
 drop table if exists public.hot_searches cascade;
@@ -224,6 +227,12 @@ create table public.admin_notifications (
   read_at timestamptz
 );
 
+-- 同一浏览器标识只能写入一条，因此可作为累计访问人数统计。
+create table public.site_visitors (
+  client_id uuid primary key,
+  first_seen_at timestamptz not null default now()
+);
+
 create index products_category_idx on public.products(category_id);
 create index products_created_idx on public.products(created_at desc);
 create index products_pinned_created_idx on public.products(is_pinned desc, created_at desc);
@@ -234,6 +243,7 @@ create index reservation_rate_limits_updated_idx on public.reservation_rate_limi
 create index product_submissions_status_created_idx on public.product_submissions(status,created_at desc);
 create index submission_rate_limits_updated_idx on public.submission_rate_limits(updated_at);
 create index admin_notifications_unread_idx on public.admin_notifications(is_read,created_at desc);
+create index site_visitors_first_seen_idx on public.site_visitors(first_seen_at desc);
 
 insert into public.site_settings(id,admin_wechat) values(true,'') on conflict (id) do nothing;
 
@@ -274,6 +284,35 @@ $$;
 
 revoke all on function public.is_admin() from public;
 grant execute on function public.is_admin() to anon, authenticated;
+
+create or replace function public.track_site_visitor(p_client_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if p_client_id is null then raise exception '浏览器标识缺失'; end if;
+  insert into public.site_visitors(client_id) values(p_client_id)
+  on conflict (client_id) do nothing;
+end;
+$$;
+revoke all on function public.track_site_visitor(uuid) from public;
+grant execute on function public.track_site_visitor(uuid) to anon,authenticated;
+
+create or replace function public.admin_visitor_count()
+returns bigint
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if not public.is_admin() then raise exception '无权限'; end if;
+  return (select count(*) from public.site_visitors);
+end;
+$$;
+revoke all on function public.admin_visitor_count() from public;
+grant execute on function public.admin_visitor_count() to authenticated;
 
 create or replace function public.submit_product_submission(
   p_title text,p_description text,p_price numeric,p_price_type text,p_condition text,
@@ -487,6 +526,7 @@ alter table public.reservation_rate_limits enable row level security;
 alter table public.product_submissions enable row level security;
 alter table public.submission_rate_limits enable row level security;
 alter table public.admin_notifications enable row level security;
+alter table public.site_visitors enable row level security;
 
 create policy profiles_admin_read on public.profiles for select to authenticated
   using ((select public.is_admin()) or id = (select auth.uid()));
@@ -546,6 +586,9 @@ create policy admin_notifications_admin_update on public.admin_notifications for
 create policy admin_notifications_admin_delete on public.admin_notifications for delete to authenticated
   using ((select public.is_admin()));
 
+create policy site_visitors_admin_read on public.site_visitors for select to authenticated
+  using ((select public.is_admin()));
+
 -- 前台商品视图：隐藏管理员联系方式，并汇总“几人想要”和剩余数量。
 create view public.product_feed
 with (security_invoker = false)
@@ -569,13 +612,14 @@ create view public.public_site_settings
 with (security_invoker = false)
 as select id,announcement,hero_headline,hero_subtitle,introduction_content,introduction_image_url,updated_at from public.site_settings where id=true;
 
-revoke all on public.profiles,public.categories,public.hot_searches,public.site_settings,public.product_code_registry,public.products,public.reservations,public.product_submissions,public.submission_rate_limits,public.admin_notifications from anon,authenticated;
+revoke all on public.profiles,public.categories,public.hot_searches,public.site_settings,public.product_code_registry,public.products,public.reservations,public.product_submissions,public.submission_rate_limits,public.admin_notifications,public.site_visitors from anon,authenticated;
 grant select on public.categories to anon,authenticated;
 grant select on public.hot_searches to anon,authenticated;
 grant select on public.product_feed to anon,authenticated;
 grant select on public.public_site_settings to anon,authenticated;
 grant select on public.products to authenticated;
 grant select on public.profiles,public.reservations,public.site_settings,public.product_code_registry to authenticated;
+grant select on public.site_visitors to authenticated;
 grant select,update,delete on public.product_submissions to authenticated;
 grant select,update,delete on public.admin_notifications to authenticated;
 grant insert,update,delete on public.categories,public.products to authenticated;
@@ -640,7 +684,7 @@ begin
   into v_storage_count,v_storage_bytes from storage.objects where bucket_id='product-images';
   select count(*) filter(where image_url is not null),count(*) filter(where image_url is not null and image_url not like '%/storage/v1/object/public/product-images/%')
   into v_product_images,v_external_images from (select image_url from public.products union all select image_url from public.product_submissions) as images;
-  v_database_bytes := pg_total_relation_size('public.profiles'::regclass)+pg_total_relation_size('public.categories'::regclass)+pg_total_relation_size('public.hot_searches'::regclass)+pg_total_relation_size('public.products'::regclass)+pg_total_relation_size('public.product_submissions'::regclass)+pg_total_relation_size('public.submission_rate_limits'::regclass)+pg_total_relation_size('public.admin_notifications'::regclass)+pg_total_relation_size('public.reservations'::regclass)+pg_total_relation_size('public.product_code_registry'::regclass)+pg_total_relation_size('public.site_settings'::regclass);
+  v_database_bytes := pg_total_relation_size('public.profiles'::regclass)+pg_total_relation_size('public.categories'::regclass)+pg_total_relation_size('public.hot_searches'::regclass)+pg_total_relation_size('public.products'::regclass)+pg_total_relation_size('public.product_submissions'::regclass)+pg_total_relation_size('public.submission_rate_limits'::regclass)+pg_total_relation_size('public.admin_notifications'::regclass)+pg_total_relation_size('public.site_visitors'::regclass)+pg_total_relation_size('public.reservations'::regclass)+pg_total_relation_size('public.product_code_registry'::regclass)+pg_total_relation_size('public.site_settings'::regclass);
   return jsonb_build_object('storage_image_count',v_storage_count,'storage_bytes',v_storage_bytes,'database_bytes',v_database_bytes,'total_bytes',v_storage_bytes+v_database_bytes,'product_image_count',v_product_images,'external_image_count',v_external_images,'measured_at',now());
 end;
 $$;
@@ -711,6 +755,9 @@ begin
   end if;
   if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='admin_notifications') then
     alter publication supabase_realtime add table public.admin_notifications;
+  end if;
+  if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='site_visitors') then
+    alter publication supabase_realtime add table public.site_visitors;
   end if;
 end $$;
 

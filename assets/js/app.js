@@ -1003,6 +1003,8 @@ async function init() {
   }
   state.client = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
   window.supabaseClient = state.client;
+  // 每个浏览器标识仅会在数据库中写入一次；失败不影响正常浏览商品。
+  state.client.rpc('track_site_visitor',{p_client_id:browserClientId()}).catch(()=>{});
   subscribePresence();
   state.client.auth.onAuthStateChange((_event,session) => {
     if (!session) { state.admin=null; renderAdminState(); }

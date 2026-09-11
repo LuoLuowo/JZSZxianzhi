@@ -3,7 +3,7 @@ const SUPABASE_URL = 'https://znrnaeebnuadbxyqaild.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable__uNRNeHvjKIMfIIdhQod6Q_KVqpmE3F';
 const db = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 const $ = id => document.getElementById(id);
-const state = {user:null,view:'overview',search:'',products:[],submissions:[],reservations:[],notifications:[],codes:[],hotSearches:[],hotSearchError:null,admins:[],settings:{admin_wechat:'',announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},resources:{},confirmAction:null,editingProduct:null,channel:null,presenceChannel:null,onlineCount:0};
+const state = {user:null,view:'overview',search:'',products:[],submissions:[],reservations:[],notifications:[],codes:[],hotSearches:[],hotSearchError:null,admins:[],settings:{admin_wechat:'',announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},resources:{},confirmAction:null,editingProduct:null,channel:null,presenceChannel:null,onlineCount:0,visitorCount:0};
 const viewMeta = {
   overview:['数据概览','查看平台实时运营数据'],products:['商品管理','查询商品、库存、卖家微信和商品码'],submissions:['发布审核','审核普通用户提交的闲置'],
   reservations:['想要记录','查询买家联系方式并处理成交'],codes:['对接码查询','查询当前和历史商品码'],
@@ -87,15 +87,17 @@ async function refreshData() {
     db.rpc('admin_list_admins'),
     db.from('site_settings').select('admin_wechat,announcement,hero_headline,hero_subtitle,introduction_content,introduction_image_url').eq('id',true).maybeSingle(),
     db.rpc('admin_resource_usage'),
+    db.rpc('admin_visitor_count'),
     db.from('hot_searches').select('*').order('sort_order').order('id')
   ]);
-  const failed=results.slice(0,9).find(result=>result.error);
+  const failed=results.slice(0,10).find(result=>result.error);
   if (failed) { $('adminPageContent').innerHTML=`<div class="empty show"><div class="empty-icon">!</div><div class="empty-title">后台数据加载失败</div><div>${esc(errorText(failed.error))}</div></div>`; return; }
   [state.products,state.submissions,state.reservations,state.notifications,state.codes,state.categories,state.admins]=results.slice(0,7).map(result=>result.data||[]);
   state.settings=results[7].data || {admin_wechat:'',announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''};
   state.resources=results[8].data || {};
-  state.hotSearches=results[9].data || [];
-  state.hotSearchError=results[9].error || null;
+  state.visitorCount=Number(results[9].data || 0);
+  state.hotSearches=results[10].data || [];
+  state.hotSearchError=results[10].error || null;
   state.products.sort((a,b)=>Number(a.status==='sold')-Number(b.status==='sold'));
   renderUnreadBadges();
   render();
@@ -136,7 +138,7 @@ function renderOverview() {
   const pending=state.reservations.filter(r=>r.status==='pending').length;
   const confirmed=state.reservations.filter(r=>r.status==='confirmed').length;
   $('adminPageContent').innerHTML=`<div class="dashboard-stats">
-    ${[['实时在线',state.onlineCount],['待审核发布',state.submissions.filter(item=>item.status==='pending').length],['商品总数',state.products.length],['在售商品',active],['剩余库存',stock],['累计商品码',state.codes.length],['想要记录',state.reservations.length],['待处理',pending],['已成交',confirmed],['近期热搜',state.hotSearches.filter(item=>item.is_active).length],['管理员',state.admins.length]].map(item=>`<div class="dashboard-card"><span>${item[0]}</span><strong>${item[1]}</strong></div>`).join('')}
+    ${[['实时在线人数',state.onlineCount,'hot'],['累计访问人数',state.visitorCount,'hot'],['待审核发布',state.submissions.filter(item=>item.status==='pending').length],['商品总数',state.products.length],['在售商品',active],['剩余库存',stock],['累计商品码',state.codes.length],['想要记录',state.reservations.length],['待处理',pending],['已成交',confirmed],['近期热搜',state.hotSearches.filter(item=>item.is_active).length],['管理员',state.admins.length]].map(item=>`<div class="dashboard-card ${item[2]||''}"><span>${item[0]}</span><strong>${item[1]}</strong></div>`).join('')}
   </div><section class="dashboard-section"><h2>前台展示设置</h2><form id="siteSettingsForm"><div class="field-group"><label class="label" for="managementWechatInput">卖方管理微信</label><input class="field" id="managementWechatInput" maxlength="120" value="${esc(state.settings.admin_wechat||'')}" placeholder="买家提交想要后统一显示此管理员微信"><div class="hint">商品里的卖家微信仅供管理员内部查看，不会提供给买家。</div></div><div class="field-group"><label class="label" for="heroSubtitleInput">首页标题下方描述</label><textarea class="field" id="heroSubtitleInput" maxlength="500" placeholder="首页主标题下方的简介文字">${esc(state.settings.hero_subtitle||'')}</textarea></div><div class="field-group"><label class="label" for="announcementInput">公告内容</label><textarea class="field" id="announcementInput" maxlength="2000" placeholder="留空则不显示公告">${esc(state.settings.announcement||'')}</textarea></div><div class="field-group"><label class="label" for="introductionContentInput">网站介绍文字</label><div class="field rich-editor" id="introductionContentInput" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="支持换行；选中文字后按 Ctrl+B 可加粗"></div><div class="hint">支持换行；选中文字后按 Ctrl+B 可加粗。</div></div><div class="field-row"><div class="field-group"><label class="label" for="introductionImageInput">介绍图片 URL</label><input class="field" id="introductionImageInput" type="url" value="${esc(state.settings.introduction_image_url||'')}" placeholder="任意可显示的图片直链"></div><div class="field-group"><label class="label" for="introductionImageFile">上传介绍图片</label><input class="field" id="introductionImageFile" type="file" accept="image/*"><div class="hint">本地图片会压缩为约 150KB 以内的 WebP；上传文件优先于 URL。</div></div></div>${state.settings.introduction_image_url?`<div class="settings-qr-current"><img class="settings-qr-preview" src="${esc(state.settings.introduction_image_url)}" alt="当前网站介绍图片"><button class="btn btn-danger btn-small" type="button" data-delete-introduction-image>删除图片</button></div>`:''}<button class="btn btn-primary" type="submit">保存前台展示设置</button></form></section><section class="dashboard-section"><h2>最近想要记录</h2>${reservationTable(state.reservations.slice(0,5),false)}</section>`;
   $('introductionContentInput').innerHTML=sanitizeIntroductionHtml(state.settings.introduction_content||'');
   $('heroSubtitleInput').closest('.field-group').insertAdjacentHTML('beforebegin',`<div class="field-group"><label class="label" for="heroHeadlineInput">搜索栏上方标题</label><input class="field" id="heroHeadlineInput" maxlength="200" value="${esc(state.settings.hero_headline||'')}" placeholder="如：发现校园好物"></div>`);
@@ -341,7 +343,7 @@ function bindEvents() {
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&$('adminProductModal').classList.contains('open'))closeProductEditor();});
 }
 
-function subscribeRealtime() { if(state.channel)return;state.channel=db.channel('admin-dashboard').on('postgres_changes',{event:'*',schema:'public',table:'products'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'product_submissions'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'reservations'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'admin_notifications'},handleNotificationChange).on('postgres_changes',{event:'*',schema:'public',table:'categories'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'hot_searches'},refreshData).subscribe(); }
+function subscribeRealtime() { if(state.channel)return;state.channel=db.channel('admin-dashboard').on('postgres_changes',{event:'*',schema:'public',table:'products'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'product_submissions'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'reservations'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'admin_notifications'},handleNotificationChange).on('postgres_changes',{event:'*',schema:'public',table:'categories'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'hot_searches'},refreshData).on('postgres_changes',{event:'INSERT',schema:'public',table:'site_visitors'},refreshData).subscribe(); }
 function subscribePresence(){if(state.presenceChannel)return;state.presenceChannel=db.channel('site-online',{config:{presence:{key:browserClientId()}}}).on('presence',{event:'sync'},()=>{state.onlineCount=Object.keys(state.presenceChannel.presenceState()).length;if(state.view==='overview'&&!$('adminShell').hidden)renderOverview();}).subscribe(status=>{if(status==='SUBSCRIBED')state.presenceChannel.track({online_at:new Date().toISOString()});});}
 function updateEditProductPriceInput(){const mode=$('editProductPriceType').value;const input=$('editProductPrice');input.disabled=false;input.required=mode!=='negotiable';input.placeholder=mode==='negotiable'?'可填写大致价格，用于价格排序':'';$('editProductPriceLabel').textContent=mode==='at_most'?'最高价格（元）':mode==='negotiable'?'大致价格（可选）':'价格（元）';}
 
