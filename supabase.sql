@@ -24,6 +24,7 @@ drop function if exists public.admin_list_admins() cascade;
 drop function if exists public.admin_resource_usage() cascade;
 drop function if exists public.admin_review_submission(uuid, text) cascade;
 drop function if exists public.submit_product_submission(text,text,numeric,text,text,bigint,integer,text,text,uuid) cascade;
+drop function if exists public.validate_seller_contact() cascade;
 drop table if exists public.reservations cascade;
 drop table if exists public.reservation_rate_limits cascade;
 drop table if exists public.submission_rate_limits cascade;
@@ -123,6 +124,27 @@ create table public.products (
   is_demo boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+create or replace function public.validate_seller_contact()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.seller_contact is null or btrim(new.seller_contact) = '' then
+    new.seller_contact := null;
+    return new;
+  end if;
+  new.seller_contact := btrim(new.seller_contact);
+  if new.seller_contact !~ '^[A-Za-z0-9._-]+$' then
+    raise exception '卖家微信仅支持英文字母、数字和 . _ - 符号';
+  end if;
+  return new;
+end;
+$$;
+create trigger products_validate_seller_contact
+before insert or update of seller_contact on public.products
+for each row execute function public.validate_seller_contact();
 
 create or replace function public.assign_product_code()
 returns trigger
@@ -255,6 +277,7 @@ begin
   if p_condition not in ('全新','几乎全新','轻微使用痕迹','明显使用痕迹') then raise exception '请选择商品成色'; end if;
   if p_quantity is null or p_quantity not between 1 and 9999 then raise exception '商品数量应在 1 至 9999 之间'; end if;
   if nullif(btrim(p_seller_contact),'') is null or char_length(btrim(p_seller_contact)) > 120 then raise exception '请填写卖家微信'; end if;
+  if btrim(p_seller_contact) !~ '^[A-Za-z0-9._-]+$' then raise exception '卖家微信仅支持英文字母、数字和 . _ - 符号'; end if;
   insert into public.submission_rate_limits(client_id) values(p_client_id) on conflict(client_id) do nothing;
   select window_started_at,submit_count into v_window_started_at,v_submit_count from public.submission_rate_limits where client_id=p_client_id for update;
   if v_window_started_at <= now()-interval '1 minute' then
@@ -464,7 +487,7 @@ create policy product_submissions_admin_read on public.product_submissions for s
 create policy product_submissions_admin_update on public.product_submissions for update to authenticated
   using ((select public.is_admin())) with check ((select public.is_admin()));
 create policy product_submissions_admin_delete on public.product_submissions for delete to authenticated
-  using ((select public.is_admin()));
+  using ((select public.is_admin()) and status='rejected');
 
 -- 前台商品视图：隐藏管理员联系方式，并汇总“几人想要”和剩余数量。
 create view public.product_feed
@@ -601,16 +624,16 @@ insert into public.hot_searches(keyword,sort_order) values
 
 -- 10. 默认 10 件演示商品（后台可直接删除）
 insert into public.products(id,title,description,price,condition,campus,category_id,status,quantity,image_url,seller_contact,is_demo,created_at) values
-('10000000-0000-4000-8000-000000000001','高等数学教材与习题详解','大一高数教材，内页干净，附带配套习题册。',18,'轻微使用痕迹','新校区',(select id from public.categories where name='教材'),'available',3,null,'微信：demo_math',true,now()-interval '1 hour'),
-('10000000-0000-4000-8000-000000000002','iPad Air 4 64G 天蓝色','功能正常，电池健康良好，带保护壳和充电器。',2280,'轻微使用痕迹','老校区',(select id from public.categories where name='数码'),'available',1,null,'微信：demo_ipad',true,now()-interval '2 hours'),
-('10000000-0000-4000-8000-000000000003','宿舍护眼 LED 台灯','三档色温，亮度可调，宿舍自提。',35,'明显使用痕迹','新校区',(select id from public.categories where name='生活'),'available',2,null,'微信：demo_light',true,now()-interval '3 hours'),
-('10000000-0000-4000-8000-000000000004','Nike 大容量运动背包','容量大，适合上课或短途出行。',88,'轻微使用痕迹','老校区',(select id from public.categories where name='运动'),'available',1,null,'微信：demo_bag',true,now()-interval '4 hours'),
-('10000000-0000-4000-8000-000000000005','冬季轻薄羽绒服 M 码','黑色 M 码，保暖轻便，无破损。',129,'几乎全新','新校区',(select id from public.categories where name='服饰'),'available',2,null,'微信：demo_coat',true,now()-interval '5 hours'),
-('10000000-0000-4000-8000-000000000006','线性代数复习资料','重点清晰，适合期末突击复习。',12,'轻微使用痕迹','老校区',(select id from public.categories where name='教材'),'available',5,null,'微信：demo_book',true,now()-interval '6 hours'),
-('10000000-0000-4000-8000-000000000007','Sony 降噪蓝牙耳机','降噪和蓝牙功能正常，耳罩已清洁。',680,'明显使用痕迹','新校区',(select id from public.categories where name='数码'),'available',1,null,'微信：demo_headphone',true,now()-interval '7 hours'),
-('10000000-0000-4000-8000-000000000008','小米 1.7L 电热水壶','烧水速度快，内胆无水垢。',28,'轻微使用痕迹','老校区',(select id from public.categories where name='生活'),'available',4,null,'微信：demo_kettle',true,now()-interval '8 hours'),
-('10000000-0000-4000-8000-000000000009','校园音乐节门票两张','两张连号票，临时有事低价转让。',60,'全新','新校区',(select id from public.categories where name='票务'),'available',2,null,'微信：demo_ticket',true,now()-interval '9 hours'),
-('10000000-0000-4000-8000-000000000010','Adidas 篮球鞋 42 码','鞋底磨损较少，已清洗消毒。',160,'轻微使用痕迹','老校区',(select id from public.categories where name='运动'),'available',1,null,'微信：demo_shoes',true,now()-interval '10 hours');
+('10000000-0000-4000-8000-000000000001','高等数学教材与习题详解','大一高数教材，内页干净，附带配套习题册。',18,'轻微使用痕迹','新校区',(select id from public.categories where name='教材'),'available',3,null,'demo_math',true,now()-interval '1 hour'),
+('10000000-0000-4000-8000-000000000002','iPad Air 4 64G 天蓝色','功能正常，电池健康良好，带保护壳和充电器。',2280,'轻微使用痕迹','老校区',(select id from public.categories where name='数码'),'available',1,null,'demo_ipad',true,now()-interval '2 hours'),
+('10000000-0000-4000-8000-000000000003','宿舍护眼 LED 台灯','三档色温，亮度可调，宿舍自提。',35,'明显使用痕迹','新校区',(select id from public.categories where name='生活'),'available',2,null,'demo_light',true,now()-interval '3 hours'),
+('10000000-0000-4000-8000-000000000004','Nike 大容量运动背包','容量大，适合上课或短途出行。',88,'轻微使用痕迹','老校区',(select id from public.categories where name='运动'),'available',1,null,'demo_bag',true,now()-interval '4 hours'),
+('10000000-0000-4000-8000-000000000005','冬季轻薄羽绒服 M 码','黑色 M 码，保暖轻便，无破损。',129,'几乎全新','新校区',(select id from public.categories where name='服饰'),'available',2,null,'demo_coat',true,now()-interval '5 hours'),
+('10000000-0000-4000-8000-000000000006','线性代数复习资料','重点清晰，适合期末突击复习。',12,'轻微使用痕迹','老校区',(select id from public.categories where name='教材'),'available',5,null,'demo_book',true,now()-interval '6 hours'),
+('10000000-0000-4000-8000-000000000007','Sony 降噪蓝牙耳机','降噪和蓝牙功能正常，耳罩已清洁。',680,'明显使用痕迹','新校区',(select id from public.categories where name='数码'),'available',1,null,'demo_headphone',true,now()-interval '7 hours'),
+('10000000-0000-4000-8000-000000000008','小米 1.7L 电热水壶','烧水速度快，内胆无水垢。',28,'轻微使用痕迹','老校区',(select id from public.categories where name='生活'),'available',4,null,'demo_kettle',true,now()-interval '8 hours'),
+('10000000-0000-4000-8000-000000000009','校园音乐节门票两张','两张连号票，临时有事低价转让。',60,'全新','新校区',(select id from public.categories where name='票务'),'available',2,null,'demo_ticket',true,now()-interval '9 hours'),
+('10000000-0000-4000-8000-000000000010','Adidas 篮球鞋 42 码','鞋底磨损较少，已清洗消毒。',160,'轻微使用痕迹','老校区',(select id from public.categories where name='运动'),'available',1,null,'demo_shoes',true,now()-interval '10 hours');
 
 -- 11. Realtime
 do $$

@@ -143,7 +143,7 @@ function renderProducts() {
 function renderSubmissions() {
   const labels={pending:'待审核',approved:'已通过',rejected:'已拒绝'};
   const data=filtered(state.submissions,s=>[s.title,s.description,s.seller_contact,s.categories?.name,s.status]);
-  $('adminPageContent').innerHTML=table(['图片','商品与卖家','价格与分类','库存','审核状态 / 时间','操作'],data.map(s=>`<tr><td>${s.image_url?`<img class="table-thumb" src="${esc(s.image_url)}" alt="${esc(s.title)}">`:'<div class="table-thumb">📦</div>'}</td><td><strong>${esc(s.title)}</strong><div class="hint">${esc(s.description||'未填写描述')}</div><div class="private-data">卖家微信：${esc(s.seller_contact)}</div></td><td>${priceText(s)}<br>${esc(s.categories?.icon||'📦')} ${esc(s.categories?.name||'未分类')}<br>${esc(s.condition)}</td><td>数量 ${s.quantity}</td><td>${labels[s.status]||s.status}<br><span class="hint">${dateText(s.created_at)}</span></td><td>${s.status==='pending'?`<div class="actions"><button class="btn btn-primary btn-small" data-review-submission="${s.id}" data-review-action="approved">审核通过并上架</button><button class="btn btn-danger btn-small" data-review-submission="${s.id}" data-review-action="rejected">拒绝</button></div>`:'—'}</td></tr>`).join(''));
+  $('adminPageContent').innerHTML=table(['图片','商品与卖家','价格与分类','库存','审核状态 / 时间','操作'],data.map(s=>`<tr><td>${s.image_url?`<img class="table-thumb" src="${esc(s.image_url)}" alt="${esc(s.title)}">`:'<div class="table-thumb">📦</div>'}</td><td><strong>${esc(s.title)}</strong><div class="hint">${esc(s.description||'未填写描述')}</div><div class="private-data">卖家微信：${esc(s.seller_contact)}</div></td><td>${priceText(s)}<br>${esc(s.categories?.icon||'📦')} ${esc(s.categories?.name||'未分类')}<br>${esc(s.condition)}</td><td>数量 ${s.quantity}</td><td>${labels[s.status]||s.status}<br><span class="hint">${dateText(s.created_at)}</span></td><td>${s.status==='pending'?`<div class="actions"><button class="btn btn-primary btn-small" data-review-submission="${s.id}" data-review-action="approved">审核通过并上架</button><button class="btn btn-danger btn-small" data-review-submission="${s.id}" data-review-action="rejected">拒绝</button></div>`:s.status==='rejected'?`<button class="btn btn-danger btn-small" data-delete-submission="${s.id}">删除记录</button>`:'—'}</td></tr>`).join(''));
 }
 
 function reservationTable(records,actions=true) {
@@ -293,6 +293,7 @@ async function deleteHotSearch(id) {const {error}=await db.from('hot_searches').
 
 async function copyCode(code) { try{await navigator.clipboard.writeText(code);toast('商品码已复制');}catch{toast('复制失败，请手动复制',false);} }
 async function reviewSubmission(id,action) { const {error}=await db.rpc('admin_review_submission',{p_submission_id:id,p_action:action});if(error)return toast(errorText(error),false);toast(action==='approved'?'审核通过，商品已上架':'已拒绝该闲置发布');await refreshData(); }
+async function deleteRejectedSubmission(id) {const submission=state.submissions.find(item=>item.id===id);if(!submission||submission.status!=='rejected')return toast('仅已拒绝的发布记录可以删除',false);const {error}=await db.from('product_submissions').delete().eq('id',id).eq('status','rejected');if(error)return toast(errorText(error),false);const path=storagePath(submission.image_url);let storageError=null;if(path?.startsWith('submissions/'))({error:storageError}=await db.storage.from('product-images').remove([path]));toast(storageError?'记录已删除，但图片清理失败，请稍后在资源占用中处理':'已删除拒绝记录并清理本地图片',!storageError);await refreshData();}
 
 function bindEvents() {
   $('adminPageLoginForm').addEventListener('submit',login); $('adminPageLogout').addEventListener('click',logout);
@@ -311,6 +312,8 @@ function bindEvents() {
     if(target.closest('[data-delete-introduction-image]'))return requestDeleteIntroductionImage();
     if(target.dataset.copyCode)return copyCode(target.dataset.copyCode);
     if(target.dataset.editProduct)return openProductEditor(target.dataset.editProduct);
+    const deleteSubmissionButton=target.closest('[data-delete-submission]');
+    if(deleteSubmissionButton){const submission=state.submissions.find(item=>item.id===deleteSubmissionButton.dataset.deleteSubmission);return askConfirm('删除拒绝记录',`确定永久删除“${submission?.title||'该闲置'}”的拒绝记录吗？本地上传图片也会一并清理，此操作无法恢复。`,'永久删除',()=>deleteRejectedSubmission(deleteSubmissionButton.dataset.deleteSubmission));}
     const reviewButton=target.closest('[data-review-submission]');
     if(reviewButton){const submission=state.submissions.find(item=>item.id===reviewButton.dataset.reviewSubmission);const approved=reviewButton.dataset.reviewAction==='approved';return askConfirm(approved?'审核通过并上架':'拒绝闲置发布',approved?`确定审核通过“${submission?.title||'该闲置'}”吗？通过后会生成永久商品码并立即展示在前台。`:`确定拒绝“${submission?.title||'该闲置'}”吗？该操作无法撤销。`,approved?'通过并上架':'确认拒绝',()=>reviewSubmission(reviewButton.dataset.reviewSubmission,reviewButton.dataset.reviewAction),approved);}
     if(target.dataset.productStatus){const product=state.products.find(p=>p.id===target.dataset.id);const label={sold:'标记售罄',removed:'下架',available:'重新上架'}[target.dataset.productStatus];return askConfirm('确认商品操作',`确定要将“${product?.title||'该商品'}”${label}吗？`,label,()=>setProductStatus(target.dataset.id,target.dataset.productStatus),target.dataset.productStatus==='available');}

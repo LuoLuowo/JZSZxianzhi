@@ -632,6 +632,7 @@ async function uploadSubmissionImage(file) {
 
 function openSubmissionForm() {
   $('submissionForm').reset();
+  $('submissionContact').placeholder='请填写正确微信号才能审核通过！';
   $('submissionQuantity').value=1;
   $('submissionError').textContent='';
   $('submissionImageHint').textContent='本地图片会压缩为 WebP，目标大小约 150KB 以内。';
