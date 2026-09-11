@@ -381,7 +381,13 @@ async function loadProducts() {
   $('loading').classList.remove('show');
   if (error) {
     $('resultCount').textContent = '加载失败';
-    if(state.products.length)toast(`商品更新失败：${friendlyError(error)}`,false);
+    const isFiltered=Boolean(state.search||state.categoryId!=='all'||state.minPrice!==null||state.maxPrice!==null||state.listMode==='recommended');
+    if(isFiltered){
+      state.products=[];
+      $('productGrid').innerHTML='';
+      $('pagination').hidden=true;
+      showEmpty('!','商品加载失败',friendlyError(error));
+    }else if(state.products.length)toast(`商品更新失败：${friendlyError(error)}`,false);
     else showEmpty('!','商品加载失败',friendlyError(error));
     return;
   }
@@ -397,6 +403,8 @@ async function loadProducts() {
 function renderProducts() {
   if(state.homeView==='products')$('resultCount').textContent = `${state.listMode==='recommended'?'推荐 ':''}共 ${state.totalProducts} 件闲置`;
   if (!state.products.length) {
+    $('productGrid').innerHTML='';
+    $('pagination').hidden=true;
     showEmpty(state.listMode==='recommended'?'⭐':'🔍',state.listMode==='recommended'?'暂无推荐闲置':'没有找到相关闲置',state.listMode==='recommended'?'管理员设置推荐商品后会显示在这里':'换个关键词或分类试试吧');
     return;
   }
