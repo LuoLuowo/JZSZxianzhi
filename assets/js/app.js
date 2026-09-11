@@ -427,8 +427,13 @@ function productShareUrl(productId) {
 
 async function shareProductDirectly() {
   if(!state.reserveProduct)return;
+  const button=$('shareProductButton');
+  if(button.disabled)return;
   const product=state.reserveProduct;
   const message=`焦专好物平台发现一个校园闲置好物，点击查看详情。\n${productShareUrl(product.id)}`;
+  button.disabled=true;
+  button.className='btn btn-ghost btn-small copying';
+  button.textContent='复制中…';
   try{
     if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(message);
     else{
@@ -438,8 +443,20 @@ async function shareProductDirectly() {
       if(!document.execCommand('copy'))throw new Error('复制失败');
       input.remove();
     }
+    button.className='btn btn-ghost btn-small copied';
+    button.textContent='复制成功 ✓';
     toast('复制成功');
-  }catch{toast('复制失败，请使用浏览器的复制功能',false);}
+  }catch{
+    button.className='btn btn-ghost btn-small copy-failed';
+    button.textContent='复制失败';
+    toast('复制失败，请使用浏览器的复制功能',false);
+  }finally{
+    window.setTimeout(()=>{
+      button.disabled=false;
+      button.className='btn btn-ghost btn-small';
+      button.textContent='分享商品';
+    },1600);
+  }
 }
 
 async function openSharedProductFromUrl() {
