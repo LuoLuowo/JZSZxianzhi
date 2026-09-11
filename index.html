@@ -100,7 +100,7 @@
 
   <div class="drawer-backdrop" id="reserveBackdrop"></div>
   <section class="drawer" id="reserveDrawer" role="dialog" aria-modal="true" aria-labelledby="reserveTitle">
-    <div class="drawer-handle"></div><div class="drawer-head"><h3 id="reserveTitle">我想要这个闲置</h3><div class="drawer-head-actions"><button class="btn btn-ghost btn-small" id="shareProductButton" type="button">分享商品</button><button class="close-btn" id="closeReserve">×</button></div></div>
+    <div class="drawer-handle"></div><div class="drawer-head"><h3 id="reserveTitle">我想要这个闲置</h3><div class="drawer-head-actions"><button class="btn btn-ghost btn-small" id="shareProductButton" type="button">分享微信好友</button><button class="close-btn" id="closeReserve">×</button></div></div>
     <div class="drawer-body">
       <div class="reserve-summary" id="reserveSummary"></div>
       <form id="reserveForm" autocomplete="off">
@@ -166,13 +166,10 @@
 
   <div class="modal-backdrop image-lightbox" id="imageLightbox"><section class="image-lightbox-panel" role="dialog" aria-modal="true" aria-labelledby="zoomImageTitle"><div class="image-lightbox-head"><strong id="zoomImageTitle">商品图片</strong><button class="close-btn" data-close="imageLightbox">×</button></div><img id="zoomImage" alt="商品大图"></section></div>
 
-  <div class="modal-backdrop" id="sharePosterModal"><section class="modal share-poster-modal" role="dialog" aria-modal="true" aria-labelledby="sharePosterTitle"><div class="modal-head"><h3 class="modal-title" id="sharePosterTitle">分享商品海报</h3><button class="close-btn" data-close="sharePosterModal">×</button></div><div class="modal-body share-poster-body"><p>长按海报可保存，二维码扫码后会直接打开该商品。</p><img id="sharePosterImage" alt="商品分享海报"><div class="share-poster-actions"><button class="btn btn-ghost" id="downloadPosterButton" type="button">保存海报</button><button class="btn btn-primary" id="nativeSharePosterButton" type="button">分享海报</button></div></div></section></div>
-
   <button class="fab" id="addProductButton" aria-label="添加闲置">+</button>
   <div class="toast" id="toast" role="status"><span class="toast-icon" id="toastIcon">✓</span><span id="toastText">操作成功</span></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0"></script>
-  <script src="assets/js/vendor/qrcode.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>
