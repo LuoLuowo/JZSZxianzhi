@@ -33,14 +33,14 @@
   <div class="announcement-bar" id="announcementBar" hidden><span class="announcement-icon">📢</span><div class="announcement-window"><div class="announcement-track" id="announcementText"></div></div></div>
 
   <section class="hero">
-    <div class="hero-actions"><button class="hero-link" id="introductionButton" type="button">📖 网站介绍</button><button class="hero-link" id="publicPublishButton" type="button">＋ 我要发布闲置</button></div>
+    <div class="hero-actions"><button class="hero-link" id="introductionButton" type="button">📖 学长介绍</button><button class="hero-link" id="publicPublishButton" type="button">＋ 我要发布闲置</button></div>
     <h1 class="hero-title" id="heroHeadline">发现校园好物</h1>
     <p class="hero-subtitle" id="heroSubtitle">校内二手闲置交换，教材、数码、生活好物，轻松找到下一位主人。</p>
     <div class="main-search"><input id="mainSearch" type="search" placeholder="搜索标题或商品描述…"><button id="mainSearchButton">搜索</button></div>
     <div class="hot-searches" id="hotSearches" hidden><span class="hot-search-label">近期热搜：</span><div class="hot-search-list" id="hotSearchList"></div></div>
   </section>
 
-  <div class="modal-backdrop" id="introductionModal"><section class="modal introduction-modal" role="dialog" aria-modal="true" aria-labelledby="introductionTitle"><div class="modal-head"><h3 class="modal-title" id="introductionTitle">焦大师专闲置好物平台介绍</h3><button class="close-btn" data-close="introductionModal">×</button></div><div class="modal-body introduction-body"><div class="introduction-content" id="introductionContent"></div><img id="introductionImage" alt="网站介绍图片" hidden></div></section></div>
+  <div class="modal-backdrop" id="introductionModal"><section class="modal introduction-modal" role="dialog" aria-modal="true" aria-labelledby="introductionTitle"><div class="modal-head"><h3 class="modal-title" id="introductionTitle">学长介绍</h3><button class="close-btn" data-close="introductionModal">×</button></div><div class="modal-body introduction-body"><div class="introduction-content" id="introductionContent"></div><img id="introductionImage" alt="学长介绍图片" hidden></div></section></div>
 
     <div class="modal-backdrop" id="submissionModal">
       <section class="modal" role="dialog" aria-modal="true" aria-labelledby="submissionTitle">
@@ -73,7 +73,7 @@
 
   <nav class="categories" aria-label="闲置分类"><div class="category-list" id="categoryList"><button class="category-tag active" data-category="all">全部</button></div><button class="category-scroll-hint" id="categoryScrollHint" type="button" aria-label="查看更多分类" title="查看更多分类">›</button></nav>
   <main class="main">
-    <div class="section-head"><div class="listing-tabs" role="tablist" aria-label="闲置列表"><button class="listing-tab" id="recommendedProductsButton" type="button" role="tab" aria-selected="false">⭐ 推荐闲置</button><button class="listing-tab active" id="latestProductsButton" type="button" role="tab" aria-selected="true">🕒 最新闲置</button></div><span class="result-count" id="resultCount">正在获取商品…</span></div>
+    <div class="section-head"><div class="listing-tabs" role="tablist" aria-label="闲置列表"><button class="listing-tab" id="recommendedProductsButton" type="button" role="tab" aria-selected="false">⭐ 推荐闲置</button><button class="listing-tab active" id="latestProductsButton" type="button" role="tab" aria-selected="true">🕒 最新闲置</button></div><span class="result-count" id="resultCount">校园闲置好物</span></div>
     <div class="filter-bar" aria-label="商品筛选与排序">
       <div class="price-filter"><span class="filter-label">价格</span><input id="minPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="最低价"><span>—</span><input id="maxPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="最高价"><button class="btn btn-primary btn-small" id="applyPriceFilter" type="button">筛选</button><button class="btn btn-ghost btn-small" id="clearPriceFilter" type="button">清除全部</button></div>
       <div class="sort-filter" id="sortFilter"><span class="filter-label">排序</span><div class="custom-select"><button class="sort-trigger" id="sortToggle" type="button" aria-haspopup="listbox" aria-expanded="false"><span id="sortLabel">最新发布</span><span class="sort-arrow">⌄</span></button><ul class="sort-menu" id="sortMenu" role="listbox" hidden><li><button class="sort-option active" type="button" data-sort="newest" role="option" aria-selected="true">最新发布</button></li><li><button class="sort-option" type="button" data-sort="price_asc" role="option">价格从低到高</button></li><li><button class="sort-option" type="button" data-sort="price_desc" role="option">价格从高到低</button></li></ul></div></div>

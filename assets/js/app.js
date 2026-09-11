@@ -1,6 +1,7 @@
 /* 焦大师专闲置好物平台 - 原生 JavaScript + Supabase */
 const SUPABASE_URL = 'https://znrnaeebnuadbxyqaild.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable__uNRNeHvjKIMfIIdhQod6Q_KVqpmE3F';
+const PRODUCT_CACHE_KEY = 'jzsf-home-products-v1';
 
 const state = {
   client: null,
@@ -216,6 +217,31 @@ function productsPerPage() {
   return 24;
 }
 
+function isDefaultProductView() {
+  return state.listMode==='latest'&&state.categoryId==='all'&&!state.search&&state.minPrice===null&&state.maxPrice===null&&state.sort==='newest'&&state.page===1;
+}
+
+function restoreCachedProducts() {
+  if(!isDefaultProductView())return false;
+  try{
+    const cached=JSON.parse(localStorage.getItem(PRODUCT_CACHE_KEY)||'null');
+    if(!cached||!Array.isArray(cached.products)||!cached.products.length)return false;
+    state.pageSize=productsPerPage();
+    state.products=cached.products.slice(0,state.pageSize);
+    state.totalProducts=Math.max(Number(cached.totalProducts)||0,state.products.length);
+    renderProducts();
+    renderPagination();
+    return true;
+  }catch{return false;}
+}
+
+function cacheHomeProducts() {
+  if(!isDefaultProductView()||!state.products.length)return;
+  try{
+    localStorage.setItem(PRODUCT_CACHE_KEY,JSON.stringify({products:state.products,totalProducts:state.totalProducts,cachedAt:Date.now()}));
+  }catch{}
+}
+
 async function loadPublicSettings() {
   const {data,error}=await state.client.from('public_site_settings').select('*').eq('id',true).maybeSingle();
   if (error) throw error;
@@ -264,7 +290,7 @@ function fitHeroHeadline() {
 function openIntroduction() {
   const content=sanitizeIntroductionHtml(state.publicSettings.introduction_content||'');
   const imageUrl=state.publicSettings.introduction_image_url?.trim();
-  if(!content.trim()&&!imageUrl)return toast('网站介绍暂未发布',false);
+  if(!content.trim()&&!imageUrl)return toast('学长介绍暂未发布',false);
   $('introductionContent').innerHTML=content || '欢迎来到焦大师专闲置好物平台。';
   $('introductionImage').hidden=!imageUrl;
   if(imageUrl)$('introductionImage').src=imageUrl;
@@ -318,7 +344,6 @@ async function loadProducts() {
   const requestId=++state.productRequestId;
   state.pageSize=productsPerPage();
   $('loading').classList.remove('show');
-  $('resultCount').textContent=state.products.length?'正在更新商品…':'正在获取商品…';
   $('emptyState').classList.remove('show');
   let query = state.client.from('product_feed').select('*',{count:'exact'});
   if(state.listMode==='recommended')query=query.eq('is_recommended',true);
@@ -347,6 +372,7 @@ async function loadProducts() {
   state.products = data || [];
   renderProducts();
   renderPagination();
+  cacheHomeProducts();
 }
 
 function renderProducts() {
@@ -1084,11 +1110,12 @@ async function init() {
   applyTheme(localStorage.getItem('jzsf-admin-theme') || 'light');
   bindEvents();
   updateSortControl();
+  const restoredProducts=restoreCachedProducts();
   if (!window.supabase?.createClient) {
     $('notice').textContent = 'Supabase 客户端加载失败，请检查网络后刷新页面。';
     $('notice').classList.add('show');
     $('loading').classList.remove('show');
-    showEmpty('!','服务暂时不可用','请检查网络连接后刷新页面');
+    if(!restoredProducts)showEmpty('!','服务暂时不可用','请检查网络连接后刷新页面');
     return;
   }
   state.client = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
