@@ -381,7 +381,6 @@ function openReserve(product) {
   $('reserveBackdrop').classList.add('open');
   $('reserveDrawer').classList.add('open');
   document.body.style.overflow = 'hidden';
-  setTimeout(() => $('buyerName').focus(),100);
 }
 
 function closeReserve() {
@@ -655,9 +654,8 @@ async function submitSubmission(event) {
     else if(imageUrl){const parsed=new URL(imageUrl);if(!['http:','https:'].includes(parsed.protocol))throw new Error('图片 URL 必须以 http 或 https 开头');uploaded={url:parsed.href};}
     const priceType=$('submissionPriceType').value,price=priceType==='negotiable'?0:Number($('submissionPrice').value);
     if(!Number.isFinite(price)||price<0)throw new Error('请输入正确的价格');
-    const payload={title:$('submissionProductTitle').value.trim(),description:$('submissionDescription').value.trim(),price,price_type:priceType,condition:$('submissionCondition').value,category_id:Number($('submissionCategory').value),quantity:Number($('submissionQuantity').value),seller_contact:$('submissionContact').value.trim(),status:'pending'};
-    if(uploaded?.url)payload.image_url=uploaded.url;
-    const {error}=await state.client.from('product_submissions').insert(payload);if(error)throw error;
+    const payload={p_title:$('submissionProductTitle').value.trim(),p_description:$('submissionDescription').value.trim(),p_price:price,p_price_type:priceType,p_condition:$('submissionCondition').value,p_category_id:Number($('submissionCategory').value),p_quantity:Number($('submissionQuantity').value),p_seller_contact:$('submissionContact').value.trim(),p_image_url:uploaded?.url||null,p_client_id:browserClientId()};
+    const {error}=await state.client.rpc('submit_product_submission',payload);if(error)throw error;
     closeModal('submissionModal');openModal('submissionResultModal');
   }catch(error){if(uploaded?.path)await state.client.storage.from('product-images').remove([uploaded.path]);$('submissionError').textContent=friendlyError(error);}
   finally{busy(button,false);}

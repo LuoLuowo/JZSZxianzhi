@@ -23,8 +23,10 @@ drop function if exists public.admin_grant_admin(text) cascade;
 drop function if exists public.admin_list_admins() cascade;
 drop function if exists public.admin_resource_usage() cascade;
 drop function if exists public.admin_review_submission(uuid, text) cascade;
+drop function if exists public.submit_product_submission(text,text,numeric,text,text,bigint,integer,text,text,uuid) cascade;
 drop table if exists public.reservations cascade;
 drop table if exists public.reservation_rate_limits cascade;
+drop table if exists public.submission_rate_limits cascade;
 drop table if exists public.product_submissions cascade;
 drop table if exists public.products cascade;
 drop table if exists public.hot_searches cascade;
@@ -178,6 +180,13 @@ create table public.product_submissions (
   created_at timestamptz not null default now()
 );
 
+create table public.submission_rate_limits (
+  client_id uuid primary key,
+  window_started_at timestamptz not null default now(),
+  submit_count smallint not null default 0 check (submit_count between 0 and 2),
+  updated_at timestamptz not null default now()
+);
+
 create index products_category_idx on public.products(category_id);
 create index products_created_idx on public.products(created_at desc);
 create index products_pinned_created_idx on public.products(is_pinned desc, created_at desc);
@@ -185,6 +194,7 @@ create index reservations_product_idx on public.reservations(product_id);
 create index reservations_created_idx on public.reservations(created_at desc);
 create index reservation_rate_limits_updated_idx on public.reservation_rate_limits(updated_at);
 create index product_submissions_status_created_idx on public.product_submissions(status,created_at desc);
+create index submission_rate_limits_updated_idx on public.submission_rate_limits(updated_at);
 
 insert into public.site_settings(id,admin_wechat) values(true,'') on conflict (id) do nothing;
 
@@ -225,6 +235,43 @@ $$;
 
 revoke all on function public.is_admin() from public;
 grant execute on function public.is_admin() to anon, authenticated;
+
+create or replace function public.submit_product_submission(
+  p_title text,p_description text,p_price numeric,p_price_type text,p_condition text,
+  p_category_id bigint,p_quantity integer,p_seller_contact text,p_image_url text default null,p_client_id uuid default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare v_submission_id uuid; v_window_started_at timestamptz; v_submit_count smallint;
+begin
+  if p_client_id is null then raise exception '浏览器标识缺失，请刷新页面后重试'; end if;
+  if nullif(btrim(p_title),'') is null or char_length(btrim(p_title)) > 120 then raise exception '商品标题应为 1 至 120 个字符'; end if;
+  if char_length(coalesce(p_description,'')) > 3000 then raise exception '详细描述不能超过 3000 个字符'; end if;
+  if p_price is null or p_price < 0 then raise exception '请输入正确的价格'; end if;
+  if p_price_type not in ('fixed','negotiable','at_most') then raise exception '无效价格方式'; end if;
+  if p_condition not in ('全新','几乎全新','轻微使用痕迹','明显使用痕迹') then raise exception '请选择商品成色'; end if;
+  if p_quantity is null or p_quantity not between 1 and 9999 then raise exception '商品数量应在 1 至 9999 之间'; end if;
+  if nullif(btrim(p_seller_contact),'') is null or char_length(btrim(p_seller_contact)) > 120 then raise exception '请填写卖家微信'; end if;
+  insert into public.submission_rate_limits(client_id) values(p_client_id) on conflict(client_id) do nothing;
+  select window_started_at,submit_count into v_window_started_at,v_submit_count from public.submission_rate_limits where client_id=p_client_id for update;
+  if v_window_started_at <= now()-interval '1 minute' then
+    update public.submission_rate_limits set window_started_at=now(),submit_count=1,updated_at=now() where client_id=p_client_id;
+  elsif v_submit_count >= 2 then
+    raise exception '提交过于频繁：同一浏览器 1 分钟内最多发布 2 次闲置，请稍后再试';
+  else
+    update public.submission_rate_limits set submit_count=submit_count+1,updated_at=now() where client_id=p_client_id;
+  end if;
+  insert into public.product_submissions(title,description,price,price_type,condition,category_id,quantity,seller_contact,image_url,status)
+  values(btrim(p_title),coalesce(p_description,''),p_price,p_price_type,p_condition,p_category_id,p_quantity,btrim(p_seller_contact),nullif(btrim(p_image_url),''),'pending')
+  returning id into v_submission_id;
+  return v_submission_id;
+end;
+$$;
+revoke all on function public.submit_product_submission(text,text,numeric,text,text,bigint,integer,text,text,uuid) from public;
+grant execute on function public.submit_product_submission(text,text,numeric,text,text,bigint,integer,text,text,uuid) to anon,authenticated;
 
 create or replace function public.admin_review_submission(p_submission_id uuid,p_action text)
 returns uuid
@@ -366,6 +413,7 @@ alter table public.products enable row level security;
 alter table public.reservations enable row level security;
 alter table public.reservation_rate_limits enable row level security;
 alter table public.product_submissions enable row level security;
+alter table public.submission_rate_limits enable row level security;
 
 create policy profiles_admin_read on public.profiles for select to authenticated
   using ((select public.is_admin()) or id = (select auth.uid()));
@@ -411,8 +459,6 @@ create policy reservations_admin_read on public.reservations for select to authe
 create policy reservations_admin_delete on public.reservations for delete to authenticated
   using ((select public.is_admin()));
 
-create policy product_submissions_public_insert on public.product_submissions for insert to anon,authenticated
-  with check (status='pending' and reviewed_at is null and reviewed_by is null);
 create policy product_submissions_admin_read on public.product_submissions for select to authenticated
   using ((select public.is_admin()));
 create policy product_submissions_admin_update on public.product_submissions for update to authenticated
@@ -442,14 +488,13 @@ create view public.public_site_settings
 with (security_invoker = false)
 as select id,announcement,hero_headline,hero_subtitle,introduction_content,introduction_image_url,updated_at from public.site_settings where id=true;
 
-revoke all on public.profiles,public.categories,public.hot_searches,public.site_settings,public.product_code_registry,public.products,public.reservations,public.product_submissions from anon,authenticated;
+revoke all on public.profiles,public.categories,public.hot_searches,public.site_settings,public.product_code_registry,public.products,public.reservations,public.product_submissions,public.submission_rate_limits from anon,authenticated;
 grant select on public.categories to anon,authenticated;
 grant select on public.hot_searches to anon,authenticated;
 grant select on public.product_feed to anon,authenticated;
 grant select on public.public_site_settings to anon,authenticated;
 grant select on public.products to authenticated;
 grant select on public.profiles,public.reservations,public.site_settings,public.product_code_registry to authenticated;
-grant insert on public.product_submissions to anon,authenticated;
 grant select,update,delete on public.product_submissions to authenticated;
 grant insert,update,delete on public.categories,public.products to authenticated;
 grant insert,update,delete on public.hot_searches to authenticated;
@@ -513,7 +558,7 @@ begin
   into v_storage_count,v_storage_bytes from storage.objects where bucket_id='product-images';
   select count(*) filter(where image_url is not null),count(*) filter(where image_url is not null and image_url not like '%/storage/v1/object/public/product-images/%')
   into v_product_images,v_external_images from (select image_url from public.products union all select image_url from public.product_submissions) as images;
-  v_database_bytes := pg_total_relation_size('public.profiles'::regclass)+pg_total_relation_size('public.categories'::regclass)+pg_total_relation_size('public.hot_searches'::regclass)+pg_total_relation_size('public.products'::regclass)+pg_total_relation_size('public.product_submissions'::regclass)+pg_total_relation_size('public.reservations'::regclass)+pg_total_relation_size('public.product_code_registry'::regclass)+pg_total_relation_size('public.site_settings'::regclass);
+  v_database_bytes := pg_total_relation_size('public.profiles'::regclass)+pg_total_relation_size('public.categories'::regclass)+pg_total_relation_size('public.hot_searches'::regclass)+pg_total_relation_size('public.products'::regclass)+pg_total_relation_size('public.product_submissions'::regclass)+pg_total_relation_size('public.submission_rate_limits'::regclass)+pg_total_relation_size('public.reservations'::regclass)+pg_total_relation_size('public.product_code_registry'::regclass)+pg_total_relation_size('public.site_settings'::regclass);
   return jsonb_build_object('storage_image_count',v_storage_count,'storage_bytes',v_storage_bytes,'database_bytes',v_database_bytes,'total_bytes',v_storage_bytes+v_database_bytes,'product_image_count',v_product_images,'external_image_count',v_external_images,'measured_at',now());
 end;
 $$;
