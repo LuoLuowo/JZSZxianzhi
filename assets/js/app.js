@@ -24,7 +24,8 @@ const state = {
   pendingConfirm: null,
   publicSettings: {announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},
   channel: null,
-  presenceChannel: null
+  presenceChannel: null,
+  productRequestId: 0
 };
 
 const $ = id => document.getElementById(id);
@@ -137,10 +138,21 @@ function debounce(fn, delay=300) {
 
 function productMedia(product, zoomable=false) {
   const icon = product.categories?.icon || product.category_icon || '📦';
-  const image = product.image_url
-    ? `<img${zoomable?' class="zoomable-image"':''} src="${escapeHtml(product.image_url)}"${zoomable?` data-full-image="${escapeHtml(product.image_url)}"`:''} alt="${escapeHtml(product.title)}" loading="lazy" onerror="this.remove()">`
+  const imageUrl=escapeHtml(product.image_url||'');
+  const image = imageUrl
+    ? zoomable
+      ? `<img class="zoomable-image product-image-loaded" src="${imageUrl}" data-full-image="${imageUrl}" alt="${escapeHtml(product.title)}" loading="eager" decoding="async" fetchpriority="high" onerror="this.remove()">`
+      : `<img class="deferred-product-image" data-src="${imageUrl}" alt="${escapeHtml(product.title)}" loading="lazy" decoding="async" fetchpriority="low" onload="this.classList.add('product-image-loaded')" onerror="this.remove()">`
     : '';
   return `${escapeHtml(icon)}${image}`;
+}
+
+function scheduleProductImages() {
+  const images=[...$('productGrid').querySelectorAll('img[data-src]')];
+  if(!images.length)return;
+  const load=()=>images.forEach(image=>{if(!image.isConnected||!image.dataset.src)return;image.src=image.dataset.src;delete image.dataset.src;});
+  if('requestIdleCallback' in window)window.requestIdleCallback(load,{timeout:600});
+  else setTimeout(load,30);
 }
 
 async function loadCategories() {
@@ -271,11 +283,11 @@ function fillCategorySelect() {
 
 async function loadProducts() {
   if (!state.client) return;
+  const requestId=++state.productRequestId;
   state.pageSize=productsPerPage();
-  $('loading').classList.add('show');
-  $('productGrid').innerHTML = '';
+  $('loading').classList.remove('show');
+  $('resultCount').textContent=state.products.length?'正在更新商品…':'正在获取商品…';
   $('emptyState').classList.remove('show');
-  $('pagination').hidden=true;
   let query = state.client.from('product_feed').select('*',{count:'exact'});
   if(state.listMode==='recommended')query=query.eq('is_recommended',true);
   if (state.categoryId !== 'all') query = query.eq('category_id', Number(state.categoryId));
@@ -289,10 +301,12 @@ async function loadProducts() {
   else query=query.order('created_at',{ascending:false});
   const from=(state.page-1)*state.pageSize;
   const { data, error, count } = await query.range(from,from+state.pageSize-1);
+  if(requestId!==state.productRequestId)return;
   $('loading').classList.remove('show');
   if (error) {
     $('resultCount').textContent = '加载失败';
-    showEmpty('!','商品加载失败',friendlyError(error));
+    if(state.products.length)toast(`商品更新失败：${friendlyError(error)}`,false);
+    else showEmpty('!','商品加载失败',friendlyError(error));
     return;
   }
   state.totalProducts=count||0;
@@ -320,6 +334,7 @@ function renderProducts() {
         <div class="product-footer"><span class="meta">${escapeHtml(p.category_icon || '📦')} ${escapeHtml(p.category_name || '其他')}</span><span class="stock-corner">剩余 ${p.available_quantity} 件</span></div>
       </div>
     </article>`).join('');
+  scheduleProductImages();
 }
 
 function renderPagination() {
@@ -1004,17 +1019,21 @@ async function init() {
   state.client = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
   window.supabaseClient = state.client;
   // 每个浏览器标识仅会在数据库中写入一次；失败不影响正常浏览商品。
-  state.client.rpc('track_site_visitor',{p_client_id:browserClientId()}).catch(()=>{});
+  Promise.resolve(state.client.rpc('track_site_visitor',{p_client_id:browserClientId()})).catch(()=>{});
   subscribePresence();
   state.client.auth.onAuthStateChange((_event,session) => {
     if (!session) { state.admin=null; renderAdminState(); }
   });
   try {
-    await restoreAdminSession();
-    await loadPublicSettings();
-    await loadCategories();
-    await loadHotSearches();
-    await loadProducts();
+    const results=await Promise.allSettled([
+      restoreAdminSession(),
+      loadPublicSettings(),
+      loadCategories(),
+      loadHotSearches(),
+      loadProducts()
+    ]);
+    const publicFailure=results.slice(1).find(result=>result.status==='rejected');
+    if(publicFailure)console.warn('部分首页数据加载失败：',publicFailure.reason);
     subscribeRealtime();
   } catch (error) {
     $('loading').classList.remove('show');

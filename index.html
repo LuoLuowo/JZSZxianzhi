@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="description" content="焦大师专闲置好物平台">
   <title>焦大师专闲置好物平台</title>
+  <link rel="preconnect" href="https://znrnaeebnuadbxyqaild.supabase.co" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="icon" type="image/png" href="assets/images/site-mark.png">
   <link rel="stylesheet" href="assets/css/style.css">
 </head>
@@ -53,12 +55,12 @@
   <div class="hot-searches" id="hotSearches" hidden><span class="hot-search-label">近期热搜</span><div class="hot-search-list" id="hotSearchList"></div></div>
 
   <main class="main">
-    <div class="section-head"><div class="listing-tabs" role="tablist" aria-label="闲置列表"><button class="listing-tab" id="recommendedProductsButton" type="button" role="tab" aria-selected="false">⭐ 推荐闲置</button><button class="listing-tab active" id="latestProductsButton" type="button" role="tab" aria-selected="true">🕒 最新闲置</button></div><span class="result-count" id="resultCount">正在加载…</span></div>
+    <div class="section-head"><div class="listing-tabs" role="tablist" aria-label="闲置列表"><button class="listing-tab" id="recommendedProductsButton" type="button" role="tab" aria-selected="false">⭐ 推荐闲置</button><button class="listing-tab active" id="latestProductsButton" type="button" role="tab" aria-selected="true">🕒 最新闲置</button></div><span class="result-count" id="resultCount">正在获取商品…</span></div>
     <div class="filter-bar" aria-label="商品筛选与排序">
       <div class="price-filter"><span class="filter-label">价格</span><input id="minPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="最低价"><span>—</span><input id="maxPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="最高价"><button class="btn btn-primary btn-small" id="applyPriceFilter" type="button">筛选</button><button class="btn btn-ghost btn-small" id="clearPriceFilter" type="button">清除全部</button></div>
       <div class="sort-filter" id="sortFilter"><span class="filter-label">排序</span><div class="custom-select"><button class="sort-trigger" id="sortToggle" type="button" aria-haspopup="listbox" aria-expanded="false"><span id="sortLabel">最新发布</span><span class="sort-arrow">⌄</span></button><ul class="sort-menu" id="sortMenu" role="listbox" hidden><li><button class="sort-option active" type="button" data-sort="newest" role="option" aria-selected="true">最新发布</button></li><li><button class="sort-option" type="button" data-sort="price_asc" role="option">价格从低到高</button></li><li><button class="sort-option" type="button" data-sort="price_desc" role="option">价格从高到低</button></li></ul></div></div>
     </div>
-    <div class="loading show" id="loading"><div class="skeleton-grid"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div></div>
+    <div class="loading" id="loading" aria-live="polite"></div>
     <div class="product-grid" id="productGrid"></div>
     <div class="empty" id="emptyState"><div class="empty-icon" id="emptyIcon">🔍</div><div class="empty-title" id="emptyTitle">没有找到相关闲置</div><div id="emptyText">换个关键词或分类试试吧</div></div>
     <nav class="pagination" id="pagination" aria-label="商品分页" hidden></nav>
