@@ -486,7 +486,7 @@ function updateWallSubmissionMode(){
   const review=wallReviewEnabled();
   const warning=$('wallSubmissionWarning'),submit=$('wallSubmissionSubmit'),resultText=$('wallSubmissionResultText'),resultHint=$('wallSubmissionResultHint');
   if(!warning||!submit||!resultText||!resultHint)return;
-  warning.textContent=review?'⚠️ 为防止骗子及违规内容，投稿需要审核通过后展示。':'⚠️ 请文明投稿，违规、辱骂和诈骗引流内容会被拦截。';
+  warning.textContent=review?'⚠️ 目前处于审核模式中，投稿需要审核通过后展示。':'✅ 目前无需审核，直接发布帖子。请文明投稿。';
   submit.textContent=review?'提交审核':'立即发布';
   resultText.textContent=review?'投稿成功，审核员近期审核速度 6 分钟以内。':'投稿已成功发布到投稿区。';
   resultHint.textContent=review?'注意：为防止骗子等内容，需要审核通过后才会展示。':'注意：违规内容会被删除，严重情况将限制投稿。';
