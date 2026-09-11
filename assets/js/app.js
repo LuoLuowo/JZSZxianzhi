@@ -43,6 +43,16 @@ function escapeHtml(value='') {
   return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// 校园墙没有上传头像时，用昵称稳定生成一枚卡通头像；同一昵称每次看到的头像一致。
+const WALL_AVATARS = ['🐼','🐰','🦊','🐱','🐻','🐸','🐶','🐯','🐨','🦁'];
+const WALL_AVATAR_COLORS = ['#dceefc','#ffe5d5','#e7defd','#d8f3eb','#fff0c7','#dfeaff','#fde0e9','#e2f0cf','#f5e0fa','#dcebe7'];
+function wallAvatar(nickname='') {
+  let hash=0;
+  for(const char of String(nickname)) hash=(hash*31+char.codePointAt(0))>>>0;
+  const index=hash%WALL_AVATARS.length;
+  return `<span class="wall-avatar-face" style="background:${WALL_AVATAR_COLORS[index]}">${WALL_AVATARS[index]}</span>`;
+}
+
 function money(value) {
   return Number(value).toLocaleString('zh-CN',{minimumFractionDigits:Number(value)%1?2:0,maximumFractionDigits:2});
 }
@@ -438,7 +448,7 @@ async function loadWallPosts() {
 
 function renderWallPosts() {
   $('wallFeed').innerHTML=state.wallPosts.map(post=>`<article class="wall-post">
-    <div class="wall-post-author">${escapeHtml(post.nickname)}</div>
+    <div class="wall-post-profile" aria-label="投稿人：${escapeHtml(post.nickname)}">${wallAvatar(post.nickname)}<div class="wall-post-author">${escapeHtml(post.nickname)}</div></div>
     <div class="wall-post-main"><div class="wall-post-head">${post.is_pinned?'<span class="wall-pin">🔝 置顶</span>':''}<h3>${escapeHtml(post.title)}</h3></div><div class="wall-post-content">${escapeHtml(post.content)}</div>${post.image_url?`<img class="wall-post-image" src="${escapeHtml(post.image_url)}" alt="${escapeHtml(post.title)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">`:''}<time>${new Date(post.created_at).toLocaleString('zh-CN')}</time></div>
   </article>`).join('');
   $('wallEmpty').classList.toggle('show',!state.wallPosts.length);
