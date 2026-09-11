@@ -22,8 +22,10 @@ drop function if exists public.assign_product_code() cascade;
 drop function if exists public.admin_grant_admin(text) cascade;
 drop function if exists public.admin_list_admins() cascade;
 drop function if exists public.admin_resource_usage() cascade;
+drop function if exists public.admin_review_submission(uuid, text) cascade;
 drop table if exists public.reservations cascade;
 drop table if exists public.reservation_rate_limits cascade;
+drop table if exists public.product_submissions cascade;
 drop table if exists public.products cascade;
 drop table if exists public.hot_searches cascade;
 drop table if exists public.categories cascade;
@@ -158,12 +160,31 @@ create table public.reservation_rate_limits (
   updated_at timestamptz not null default now()
 );
 
+-- 普通用户提交的闲置先进入审核队列，审核通过后才会创建正式商品。
+create table public.product_submissions (
+  id uuid primary key default gen_random_uuid(),
+  title text not null check (char_length(title) between 1 and 120),
+  description text not null default '' check (char_length(description) <= 3000),
+  price numeric(10,2) not null check (price >= 0),
+  price_type text not null default 'fixed' check (price_type in ('fixed','negotiable','at_most')),
+  condition text not null check (condition in ('全新','几乎全新','轻微使用痕迹','明显使用痕迹')),
+  category_id bigint not null references public.categories(id) on delete restrict,
+  quantity integer not null default 1 check (quantity between 1 and 9999),
+  seller_contact text not null check (char_length(seller_contact) between 1 and 120),
+  image_url text,
+  status text not null default 'pending' check (status in ('pending','approved','rejected')),
+  reviewed_at timestamptz,
+  reviewed_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
 create index products_category_idx on public.products(category_id);
 create index products_created_idx on public.products(created_at desc);
 create index products_pinned_created_idx on public.products(is_pinned desc, created_at desc);
 create index reservations_product_idx on public.reservations(product_id);
 create index reservations_created_idx on public.reservations(created_at desc);
 create index reservation_rate_limits_updated_idx on public.reservation_rate_limits(updated_at);
+create index product_submissions_status_created_idx on public.product_submissions(status,created_at desc);
 
 insert into public.site_settings(id,admin_wechat) values(true,'') on conflict (id) do nothing;
 
@@ -204,6 +225,31 @@ $$;
 
 revoke all on function public.is_admin() from public;
 grant execute on function public.is_admin() to anon, authenticated;
+
+create or replace function public.admin_review_submission(p_submission_id uuid,p_action text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare v_submission public.product_submissions%rowtype; v_product_id uuid;
+begin
+  if not public.is_admin() then raise exception '无权限'; end if;
+  if p_action not in ('approved','rejected') then raise exception '无效审核操作'; end if;
+  select * into v_submission from public.product_submissions where id=p_submission_id for update;
+  if not found then raise exception '投稿不存在'; end if;
+  if v_submission.status <> 'pending' then raise exception '该投稿已审核'; end if;
+  if p_action='approved' then
+    insert into public.products(title,description,price,price_type,condition,campus,category_id,quantity,seller_contact,status,image_url,is_demo)
+    values(v_submission.title,v_submission.description,v_submission.price,v_submission.price_type,v_submission.condition,'焦作师专校内',v_submission.category_id,v_submission.quantity,v_submission.seller_contact,'available',v_submission.image_url,false)
+    returning id into v_product_id;
+  end if;
+  update public.product_submissions set status=p_action,reviewed_at=now(),reviewed_by=auth.uid() where id=p_submission_id;
+  return v_product_id;
+end;
+$$;
+revoke all on function public.admin_review_submission(uuid,text) from public;
+grant execute on function public.admin_review_submission(uuid,text) to authenticated;
 
 -- 5. 匿名访客原子预定
 create or replace function public.reserve_product(
@@ -319,6 +365,7 @@ alter table public.site_settings enable row level security;
 alter table public.products enable row level security;
 alter table public.reservations enable row level security;
 alter table public.reservation_rate_limits enable row level security;
+alter table public.product_submissions enable row level security;
 
 create policy profiles_admin_read on public.profiles for select to authenticated
   using ((select public.is_admin()) or id = (select auth.uid()));
@@ -364,6 +411,15 @@ create policy reservations_admin_read on public.reservations for select to authe
 create policy reservations_admin_delete on public.reservations for delete to authenticated
   using ((select public.is_admin()));
 
+create policy product_submissions_public_insert on public.product_submissions for insert to anon,authenticated
+  with check (status='pending' and reviewed_at is null and reviewed_by is null);
+create policy product_submissions_admin_read on public.product_submissions for select to authenticated
+  using ((select public.is_admin()));
+create policy product_submissions_admin_update on public.product_submissions for update to authenticated
+  using ((select public.is_admin())) with check ((select public.is_admin()));
+create policy product_submissions_admin_delete on public.product_submissions for delete to authenticated
+  using ((select public.is_admin()));
+
 -- 前台商品视图：隐藏管理员联系方式，并汇总“几人想要”和剩余数量。
 create view public.product_feed
 with (security_invoker = false)
@@ -386,13 +442,15 @@ create view public.public_site_settings
 with (security_invoker = false)
 as select id,announcement,hero_headline,hero_subtitle,introduction_content,introduction_image_url,updated_at from public.site_settings where id=true;
 
-revoke all on public.profiles,public.categories,public.hot_searches,public.site_settings,public.product_code_registry,public.products,public.reservations from anon,authenticated;
+revoke all on public.profiles,public.categories,public.hot_searches,public.site_settings,public.product_code_registry,public.products,public.reservations,public.product_submissions from anon,authenticated;
 grant select on public.categories to anon,authenticated;
 grant select on public.hot_searches to anon,authenticated;
 grant select on public.product_feed to anon,authenticated;
 grant select on public.public_site_settings to anon,authenticated;
 grant select on public.products to authenticated;
 grant select on public.profiles,public.reservations,public.site_settings,public.product_code_registry to authenticated;
+grant insert on public.product_submissions to anon,authenticated;
+grant select,update,delete on public.product_submissions to authenticated;
 grant insert,update,delete on public.categories,public.products to authenticated;
 grant insert,update,delete on public.hot_searches to authenticated;
 grant update on public.site_settings to authenticated;
@@ -454,8 +512,8 @@ begin
   select count(*),coalesce(sum(case when coalesce(metadata->>'size','') ~ '^[0-9]+$' then (metadata->>'size')::bigint else 0 end),0)
   into v_storage_count,v_storage_bytes from storage.objects where bucket_id='product-images';
   select count(*) filter(where image_url is not null),count(*) filter(where image_url is not null and image_url not like '%/storage/v1/object/public/product-images/%')
-  into v_product_images,v_external_images from public.products;
-  v_database_bytes := pg_total_relation_size('public.profiles'::regclass)+pg_total_relation_size('public.categories'::regclass)+pg_total_relation_size('public.hot_searches'::regclass)+pg_total_relation_size('public.products'::regclass)+pg_total_relation_size('public.reservations'::regclass)+pg_total_relation_size('public.product_code_registry'::regclass)+pg_total_relation_size('public.site_settings'::regclass);
+  into v_product_images,v_external_images from (select image_url from public.products union all select image_url from public.product_submissions) as images;
+  v_database_bytes := pg_total_relation_size('public.profiles'::regclass)+pg_total_relation_size('public.categories'::regclass)+pg_total_relation_size('public.hot_searches'::regclass)+pg_total_relation_size('public.products'::regclass)+pg_total_relation_size('public.product_submissions'::regclass)+pg_total_relation_size('public.reservations'::regclass)+pg_total_relation_size('public.product_code_registry'::regclass)+pg_total_relation_size('public.site_settings'::regclass);
   return jsonb_build_object('storage_image_count',v_storage_count,'storage_bytes',v_storage_bytes,'database_bytes',v_database_bytes,'total_bytes',v_storage_bytes+v_database_bytes,'product_image_count',v_product_images,'external_image_count',v_external_images,'measured_at',now());
 end;
 $$;
@@ -474,6 +532,7 @@ drop policy if exists product_images_admin_delete on storage.objects;
 drop policy if exists product_images_insert_own on storage.objects;
 drop policy if exists product_images_update_own on storage.objects;
 drop policy if exists product_images_delete_own on storage.objects;
+drop policy if exists product_submission_images_public_insert on storage.objects;
 
 create policy product_images_public_read on storage.objects for select to anon,authenticated
   using (bucket_id='product-images');
@@ -484,6 +543,8 @@ create policy product_images_admin_update on storage.objects for update to authe
   with check (bucket_id='product-images' and (select public.is_admin()));
 create policy product_images_admin_delete on storage.objects for delete to authenticated
   using (bucket_id='product-images' and (select public.is_admin()));
+create policy product_submission_images_public_insert on storage.objects for insert to anon,authenticated
+  with check (bucket_id='product-images' and (storage.foldername(name))[1]='submissions');
 
 -- 9. 默认分类
 insert into public.categories(name,icon,sort_order) values
@@ -517,6 +578,9 @@ begin
   end if;
   if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='hot_searches') then
     alter publication supabase_realtime add table public.hot_searches;
+  end if;
+  if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='product_submissions') then
+    alter publication supabase_realtime add table public.product_submissions;
   end if;
 end $$;
 

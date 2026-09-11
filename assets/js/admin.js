@@ -3,9 +3,9 @@ const SUPABASE_URL = 'https://znrnaeebnuadbxyqaild.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable__uNRNeHvjKIMfIIdhQod6Q_KVqpmE3F';
 const db = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 const $ = id => document.getElementById(id);
-const state = {user:null,view:'overview',search:'',products:[],reservations:[],codes:[],hotSearches:[],hotSearchError:null,admins:[],settings:{admin_wechat:'',announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},resources:{},confirmAction:null,editingProduct:null,channel:null,presenceChannel:null,onlineCount:0};
+const state = {user:null,view:'overview',search:'',products:[],submissions:[],reservations:[],codes:[],hotSearches:[],hotSearchError:null,admins:[],settings:{admin_wechat:'',announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},resources:{},confirmAction:null,editingProduct:null,channel:null,presenceChannel:null,onlineCount:0};
 const viewMeta = {
-  overview:['数据概览','查看平台实时运营数据'],products:['商品管理','查询商品、库存、卖家微信和商品码'],
+  overview:['数据概览','查看平台实时运营数据'],products:['商品管理','查询商品、库存、卖家微信和商品码'],submissions:['发布审核','审核普通用户提交的闲置'],
   reservations:['想要记录','查询买家联系方式并处理成交'],codes:['对接码查询','查询当前和历史商品码'],
   resources:['资源占用','查看图片、Storage 和数据库实时占用'],categories:['分类管理','维护前台商品分类'],hotSearches:['热搜管理','添加、排序、启用或删除首页近期热搜'],admins:['管理员管理','授权其他管理员共同管理网站']
 };
@@ -79,6 +79,7 @@ async function refreshData() {
   $('adminPageContent').innerHTML='<div class="loading show">正在加载后台数据…</div>';
   const results=await Promise.all([
     db.from('products').select('*,categories(id,name,icon)').order('is_pinned',{ascending:false}).order('created_at',{ascending:false}),
+    db.from('product_submissions').select('*,categories(id,name,icon)').order('created_at',{ascending:false}),
     db.from('reservations').select('*,products(id,title,connection_code)').neq('status','cancelled').order('created_at',{ascending:false}),
     db.from('product_code_registry').select('*').order('issued_at',{ascending:false}),
     db.from('categories').select('*').order('sort_order').order('id'),
@@ -87,13 +88,13 @@ async function refreshData() {
     db.rpc('admin_resource_usage'),
     db.from('hot_searches').select('*').order('sort_order').order('id')
   ]);
-  const failed=results.slice(0,7).find(result=>result.error);
+  const failed=results.slice(0,8).find(result=>result.error);
   if (failed) { $('adminPageContent').innerHTML=`<div class="empty show"><div class="empty-icon">!</div><div class="empty-title">后台数据加载失败</div><div>${esc(errorText(failed.error))}</div></div>`; return; }
-  [state.products,state.reservations,state.codes,state.categories,state.admins]=results.slice(0,5).map(result=>result.data||[]);
-  state.settings=results[5].data || {admin_wechat:'',announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''};
-  state.resources=results[6].data || {};
-  state.hotSearches=results[7].data || [];
-  state.hotSearchError=results[7].error || null;
+  [state.products,state.submissions,state.reservations,state.codes,state.categories,state.admins]=results.slice(0,6).map(result=>result.data||[]);
+  state.settings=results[6].data || {admin_wechat:'',announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''};
+  state.resources=results[7].data || {};
+  state.hotSearches=results[8].data || [];
+  state.hotSearchError=results[8].error || null;
   state.products.sort((a,b)=>Number(a.status==='sold')-Number(b.status==='sold'));
   render();
 }
@@ -102,13 +103,14 @@ function setView(view) {
   state.view=view; state.search=''; $('adminSearch').value='';
   document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button.dataset.view===view));
   $('viewTitle').textContent=viewMeta[view][0]; $('viewDescription').textContent=viewMeta[view][1];
-  const hints={overview:'概览无需查询',products:'商品名、商品码、校区、卖家微信',reservations:'商品、商品码、买家、联系方式',codes:'输入五位对接码或商品名',resources:'图片标题或 URL',categories:'分类名称',hotSearches:'热搜关键词',admins:'管理员邮箱或昵称'};
+  const hints={overview:'概览无需查询',products:'商品名、商品码、校区、卖家微信',submissions:'商品名、卖家微信、分类或审核状态',reservations:'商品、商品码、买家、联系方式',codes:'输入五位对接码或商品名',resources:'图片标题或 URL',categories:'分类名称',hotSearches:'热搜关键词',admins:'管理员邮箱或昵称'};
   $('adminSearch').placeholder=hints[view]; $('adminSearch').disabled=view==='overview'; $('adminSearchButton').disabled=view==='overview'; render();
 }
 
 function render() {
   if (state.view==='overview') return renderOverview();
   if (state.view==='products') return renderProducts();
+  if (state.view==='submissions') return renderSubmissions();
   if (state.view==='reservations') return renderReservations();
   if (state.view==='codes') return renderCodes();
   if (state.view==='resources') return renderResources();
@@ -123,7 +125,7 @@ function renderOverview() {
   const pending=state.reservations.filter(r=>r.status==='pending').length;
   const confirmed=state.reservations.filter(r=>r.status==='confirmed').length;
   $('adminPageContent').innerHTML=`<div class="dashboard-stats">
-    ${[['实时在线',state.onlineCount],['商品总数',state.products.length],['在售商品',active],['剩余库存',stock],['累计商品码',state.codes.length],['想要记录',state.reservations.length],['待处理',pending],['已成交',confirmed],['近期热搜',state.hotSearches.filter(item=>item.is_active).length],['管理员',state.admins.length]].map(item=>`<div class="dashboard-card"><span>${item[0]}</span><strong>${item[1]}</strong></div>`).join('')}
+    ${[['实时在线',state.onlineCount],['待审核发布',state.submissions.filter(item=>item.status==='pending').length],['商品总数',state.products.length],['在售商品',active],['剩余库存',stock],['累计商品码',state.codes.length],['想要记录',state.reservations.length],['待处理',pending],['已成交',confirmed],['近期热搜',state.hotSearches.filter(item=>item.is_active).length],['管理员',state.admins.length]].map(item=>`<div class="dashboard-card"><span>${item[0]}</span><strong>${item[1]}</strong></div>`).join('')}
   </div><section class="dashboard-section"><h2>前台展示设置</h2><form id="siteSettingsForm"><div class="field-group"><label class="label" for="managementWechatInput">卖方管理微信</label><input class="field" id="managementWechatInput" maxlength="120" value="${esc(state.settings.admin_wechat||'')}" placeholder="买家提交想要后统一显示此管理员微信"><div class="hint">商品里的卖家微信仅供管理员内部查看，不会提供给买家。</div></div><div class="field-group"><label class="label" for="heroSubtitleInput">首页标题下方描述</label><textarea class="field" id="heroSubtitleInput" maxlength="500" placeholder="首页主标题下方的简介文字">${esc(state.settings.hero_subtitle||'')}</textarea></div><div class="field-group"><label class="label" for="announcementInput">公告内容</label><textarea class="field" id="announcementInput" maxlength="2000" placeholder="留空则不显示公告">${esc(state.settings.announcement||'')}</textarea></div><div class="field-group"><label class="label" for="introductionContentInput">网站介绍文字</label><div class="field rich-editor" id="introductionContentInput" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="支持换行；选中文字后按 Ctrl+B 可加粗"></div><div class="hint">支持换行；选中文字后按 Ctrl+B 可加粗。</div></div><div class="field-row"><div class="field-group"><label class="label" for="introductionImageInput">介绍图片 URL</label><input class="field" id="introductionImageInput" type="url" value="${esc(state.settings.introduction_image_url||'')}" placeholder="任意可显示的图片直链"></div><div class="field-group"><label class="label" for="introductionImageFile">上传介绍图片</label><input class="field" id="introductionImageFile" type="file" accept="image/*"><div class="hint">本地图片会压缩为约 150KB 以内的 WebP；上传文件优先于 URL。</div></div></div>${state.settings.introduction_image_url?`<div class="settings-qr-current"><img class="settings-qr-preview" src="${esc(state.settings.introduction_image_url)}" alt="当前网站介绍图片"><button class="btn btn-danger btn-small" type="button" data-delete-introduction-image>删除图片</button></div>`:''}<button class="btn btn-primary" type="submit">保存前台展示设置</button></form></section><section class="dashboard-section"><h2>最近想要记录</h2>${reservationTable(state.reservations.slice(0,5),false)}</section>`;
   $('introductionContentInput').innerHTML=sanitizeIntroductionHtml(state.settings.introduction_content||'');
   $('heroSubtitleInput').closest('.field-group').insertAdjacentHTML('beforebegin',`<div class="field-group"><label class="label" for="heroHeadlineInput">搜索栏上方标题</label><input class="field" id="heroHeadlineInput" maxlength="200" value="${esc(state.settings.hero_headline||'')}" placeholder="如：发现校园好物"></div>`);
@@ -135,7 +137,13 @@ function table(headers,rows) { return `<div class="data-card"><table class="data
 
 function renderProducts() {
   const data=filtered(state.products,p=>[p.title,p.description,p.connection_code,p.campus,p.seller_contact,p.categories?.name,p.status]);
-  $('adminPageContent').innerHTML=table(['商品码 / 商品','价格与分类','库存','卖家微信','状态 / 时间','操作'],data.map(p=>`<tr><td><div class="code">${esc(p.connection_code)}</div><strong>${p.is_pinned?'🔝 ':''}${esc(p.title)}</strong><div class="hint">${esc(p.description)}</div></td><td>${priceText(p)}<br>${esc(p.categories?.icon||'📦')} ${esc(p.categories?.name||'未分类')}<br>${esc(p.campus)} · ${esc(p.condition)}</td><td>总数 ${p.quantity}<br>已售 ${p.sold_quantity}<br>剩余 ${p.quantity-p.sold_quantity}</td><td class="private-data">${esc(p.seller_contact||'未填写')}</td><td>${productStatus[p.status]||p.status}<br><span class="hint">${dateText(p.created_at)}</span></td><td><div class="actions"><button class="btn btn-ghost btn-small" data-edit-product="${p.id}">编辑</button>${p.status!=='sold'?`<button class="btn btn-primary btn-small" data-product-status="sold" data-id="${p.id}">标记售罄</button>`:''}${p.status!=='removed'?`<button class="btn btn-ghost btn-small" data-product-status="removed" data-id="${p.id}">下架</button>`:`<button class="btn btn-ghost btn-small" data-product-status="available" data-id="${p.id}">上架</button>`}<button class="btn btn-danger btn-small" data-delete-product="${p.id}">删除</button></div></td></tr>`).join(''));
+  $('adminPageContent').innerHTML=table(['图片','商品码 / 商品','价格与分类','库存','卖家微信','状态 / 时间','操作'],data.map(p=>`<tr><td>${p.image_url?`<img class="table-thumb" src="${esc(p.image_url)}" alt="${esc(p.title)}">`:'<div class="table-thumb">📦</div>'}</td><td><div class="code">${esc(p.connection_code)}</div><strong>${p.is_pinned?'🔝 ':''}${esc(p.title)}</strong><div class="hint">${esc(p.description)}</div></td><td>${priceText(p)}<br>${esc(p.categories?.icon||'📦')} ${esc(p.categories?.name||'未分类')}<br>${esc(p.campus)} · ${esc(p.condition)}</td><td>总数 ${p.quantity}<br>已售 ${p.sold_quantity}<br>剩余 ${p.quantity-p.sold_quantity}</td><td class="private-data">${esc(p.seller_contact||'未填写')}</td><td>${productStatus[p.status]||p.status}<br><span class="hint">${dateText(p.created_at)}</span></td><td><div class="actions"><button class="btn btn-ghost btn-small" data-edit-product="${p.id}">编辑</button>${p.status!=='sold'?`<button class="btn btn-primary btn-small" data-product-status="sold" data-id="${p.id}">标记售罄</button>`:''}${p.status!=='removed'?`<button class="btn btn-ghost btn-small" data-product-status="removed" data-id="${p.id}">下架</button>`:`<button class="btn btn-ghost btn-small" data-product-status="available" data-id="${p.id}">上架</button>`}<button class="btn btn-danger btn-small" data-delete-product="${p.id}">删除</button></div></td></tr>`).join(''));
+}
+
+function renderSubmissions() {
+  const labels={pending:'待审核',approved:'已通过',rejected:'已拒绝'};
+  const data=filtered(state.submissions,s=>[s.title,s.description,s.seller_contact,s.categories?.name,s.status]);
+  $('adminPageContent').innerHTML=table(['图片','商品与卖家','价格与分类','库存','审核状态 / 时间','操作'],data.map(s=>`<tr><td>${s.image_url?`<img class="table-thumb" src="${esc(s.image_url)}" alt="${esc(s.title)}">`:'<div class="table-thumb">📦</div>'}</td><td><strong>${esc(s.title)}</strong><div class="hint">${esc(s.description||'未填写描述')}</div><div class="private-data">卖家微信：${esc(s.seller_contact)}</div></td><td>${priceText(s)}<br>${esc(s.categories?.icon||'📦')} ${esc(s.categories?.name||'未分类')}<br>${esc(s.condition)}</td><td>数量 ${s.quantity}</td><td>${labels[s.status]||s.status}<br><span class="hint">${dateText(s.created_at)}</span></td><td>${s.status==='pending'?`<div class="actions"><button class="btn btn-primary btn-small" data-review-submission="${s.id}" data-review-action="approved">审核通过并上架</button><button class="btn btn-danger btn-small" data-review-submission="${s.id}" data-review-action="rejected">拒绝</button></div>`:'—'}</td></tr>`).join(''));
 }
 
 function reservationTable(records,actions=true) {
@@ -284,6 +292,7 @@ async function saveHotSearch(id) {const {error}=await db.from('hot_searches').up
 async function deleteHotSearch(id) {const {error}=await db.from('hot_searches').delete().eq('id',id);if(error)return toast(errorText(error),false);toast('热搜已删除');await refreshData();}
 
 async function copyCode(code) { try{await navigator.clipboard.writeText(code);toast('商品码已复制');}catch{toast('复制失败，请手动复制',false);} }
+async function reviewSubmission(id,action) { const {error}=await db.rpc('admin_review_submission',{p_submission_id:id,p_action:action});if(error)return toast(errorText(error),false);toast(action==='approved'?'审核通过，商品已上架':'已拒绝该闲置发布');await refreshData(); }
 
 function bindEvents() {
   $('adminPageLoginForm').addEventListener('submit',login); $('adminPageLogout').addEventListener('click',logout);
@@ -302,6 +311,8 @@ function bindEvents() {
     if(target.closest('[data-delete-introduction-image]'))return requestDeleteIntroductionImage();
     if(target.dataset.copyCode)return copyCode(target.dataset.copyCode);
     if(target.dataset.editProduct)return openProductEditor(target.dataset.editProduct);
+    const reviewButton=target.closest('[data-review-submission]');
+    if(reviewButton){const submission=state.submissions.find(item=>item.id===reviewButton.dataset.reviewSubmission);const approved=reviewButton.dataset.reviewAction==='approved';return askConfirm(approved?'审核通过并上架':'拒绝闲置发布',approved?`确定审核通过“${submission?.title||'该闲置'}”吗？通过后会生成永久商品码并立即展示在前台。`:`确定拒绝“${submission?.title||'该闲置'}”吗？该操作无法撤销。`,approved?'通过并上架':'确认拒绝',()=>reviewSubmission(reviewButton.dataset.reviewSubmission,reviewButton.dataset.reviewAction),approved);}
     if(target.dataset.productStatus){const product=state.products.find(p=>p.id===target.dataset.id);const label={sold:'标记售罄',removed:'下架',available:'重新上架'}[target.dataset.productStatus];return askConfirm('确认商品操作',`确定要将“${product?.title||'该商品'}”${label}吗？`,label,()=>setProductStatus(target.dataset.id,target.dataset.productStatus),target.dataset.productStatus==='available');}
     if(target.dataset.deleteProduct){const product=state.products.find(p=>p.id===target.dataset.deleteProduct);return askConfirm('永久删除商品',`确定删除“${product?.title||'该商品'}”吗？商品数据无法恢复，但五位商品码会永久保留且永不再次使用。`,'永久删除',()=>deleteProduct(target.dataset.deleteProduct));}
     if(target.dataset.reservationStatus){const text=target.dataset.reservationStatus==='confirmed'?'确认成交将扣减一件库存。':'取消表示买家无购买意向，该记录会直接删除且无法恢复。';return askConfirm('确认处理想要记录',text,target.dataset.reservationStatus==='confirmed'?'确认成交':'取消并删除',()=>setReservationStatus(target.dataset.id,target.dataset.reservationStatus),target.dataset.reservationStatus==='confirmed');}
@@ -314,7 +325,7 @@ function bindEvents() {
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&$('adminProductModal').classList.contains('open'))closeProductEditor();});
 }
 
-function subscribeRealtime() { if(state.channel)return;state.channel=db.channel('admin-dashboard').on('postgres_changes',{event:'*',schema:'public',table:'products'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'reservations'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'categories'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'hot_searches'},refreshData).subscribe(); }
+function subscribeRealtime() { if(state.channel)return;state.channel=db.channel('admin-dashboard').on('postgres_changes',{event:'*',schema:'public',table:'products'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'product_submissions'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'reservations'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'categories'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'hot_searches'},refreshData).subscribe(); }
 function subscribePresence(){if(state.presenceChannel)return;state.presenceChannel=db.channel('site-online',{config:{presence:{key:browserClientId()}}}).on('presence',{event:'sync'},()=>{state.onlineCount=Object.keys(state.presenceChannel.presenceState()).length;if(state.view==='overview'&&!$('adminShell').hidden)renderOverview();}).subscribe(status=>{if(status==='SUBSCRIBED')state.presenceChannel.track({online_at:new Date().toISOString()});});}
 function updateEditProductPriceInput(){const mode=$('editProductPriceType').value;const input=$('editProductPrice');input.disabled=mode==='negotiable';input.required=mode!=='negotiable';$('editProductPriceLabel').textContent=mode==='at_most'?'最高价格（元）':mode==='negotiable'?'价格（面议）':'价格（元）';}
 

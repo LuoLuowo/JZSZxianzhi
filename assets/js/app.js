@@ -207,10 +207,10 @@ function fitHeroHeadline() {
   const title=$('heroHeadline');
   title.style.fontSize='';
   if(window.innerWidth>760)return;
-  const maxWidth=title.parentElement.clientWidth;
+  const maxWidth=Math.max(1,Math.min(window.innerWidth-28,title.parentElement.clientWidth-48));
   let size=30;
   title.style.fontSize=`${size}px`;
-  while(title.getBoundingClientRect().width>maxWidth&&size>16){
+  while(title.getBoundingClientRect().width>maxWidth&&size>12){
     size-=1;
     title.style.fontSize=`${size}px`;
   }
@@ -261,9 +261,11 @@ function updateCategoryScrollHint() {
 }
 
 function fillCategorySelect() {
-  $('productCategory').innerHTML = '<option value="">请选择分类</option>' + state.categories.filter(c => c.is_active).map(c =>
+  const options = '<option value="">请选择分类</option>' + state.categories.filter(c => c.is_active).map(c =>
     `<option value="${c.id}">${escapeHtml(c.icon)} ${escapeHtml(c.name)}</option>`
   ).join('');
+  $('productCategory').innerHTML=options;
+  $('submissionCategory').innerHTML=options;
 }
 
 async function loadProducts() {
@@ -619,6 +621,48 @@ async function uploadImage(file) {
   return {url:state.client.storage.from('product-images').getPublicUrl(path).data.publicUrl,path,size:compressed.size};
 }
 
+async function uploadSubmissionImage(file) {
+  if(!file?.type.startsWith('image/'))throw new Error('请选择图片文件');
+  $('submissionImageHint').textContent='正在压缩为 WebP…';
+  const compressed=await compressToWebp(file);
+  const path=`submissions/${crypto.randomUUID?crypto.randomUUID():Date.now()}.webp`;
+  const {error}=await state.client.storage.from('product-images').upload(path,new File([compressed],'submission.webp',{type:'image/webp'}),{cacheControl:'31536000',contentType:'image/webp',upsert:false});
+  if(error)throw error;
+  return {url:state.client.storage.from('product-images').getPublicUrl(path).data.publicUrl,path,size:compressed.size};
+}
+
+function openSubmissionForm() {
+  $('submissionForm').reset();
+  $('submissionQuantity').value=1;
+  $('submissionError').textContent='';
+  $('submissionImageHint').textContent='本地图片会压缩为 WebP，目标大小约 150KB 以内。';
+  updateSubmissionPriceInput();
+  openModal('submissionModal');
+}
+
+function updateSubmissionPriceInput() {
+  const mode=$('submissionPriceType').value,input=$('submissionPrice');
+  input.disabled=mode==='negotiable'; input.required=mode!=='negotiable';
+  $('submissionPriceLabel').textContent=mode==='at_most'?'最高价格（元）':mode==='negotiable'?'价格（面议）':'价格（元）';
+}
+
+async function submitSubmission(event) {
+  event.preventDefault();
+  const button=$('submissionSubmit'),file=$('submissionImage').files[0],imageUrl=$('submissionImageUrl').value.trim();
+  let uploaded=null;$('submissionError').textContent='';busy(button,true,(file||imageUrl)?'处理图片中…':'提交中…');
+  try{
+    if(file)uploaded=await uploadSubmissionImage(file);
+    else if(imageUrl){const parsed=new URL(imageUrl);if(!['http:','https:'].includes(parsed.protocol))throw new Error('图片 URL 必须以 http 或 https 开头');uploaded={url:parsed.href};}
+    const priceType=$('submissionPriceType').value,price=priceType==='negotiable'?0:Number($('submissionPrice').value);
+    if(!Number.isFinite(price)||price<0)throw new Error('请输入正确的价格');
+    const payload={title:$('submissionProductTitle').value.trim(),description:$('submissionDescription').value.trim(),price,price_type:priceType,condition:$('submissionCondition').value,category_id:Number($('submissionCategory').value),quantity:Number($('submissionQuantity').value),seller_contact:$('submissionContact').value.trim(),status:'pending'};
+    if(uploaded?.url)payload.image_url=uploaded.url;
+    const {error}=await state.client.from('product_submissions').insert(payload);if(error)throw error;
+    closeModal('submissionModal');openModal('submissionResultModal');
+  }catch(error){if(uploaded?.path)await state.client.storage.from('product-images').remove([uploaded.path]);$('submissionError').textContent=friendlyError(error);}
+  finally{busy(button,false);}
+}
+
 function storagePathFromUrl(url) {
   if (!url) return null;
   const marker = '/storage/v1/object/public/product-images/';
@@ -853,6 +897,9 @@ function bindEvents() {
   $('copyConnectionCode').addEventListener('click',copyConnectionCode);
   $('productForm').addEventListener('submit',submitProduct);
   $('productPriceType').addEventListener('change',updateProductPriceInput);
+  $('publicPublishButton').addEventListener('click',openSubmissionForm);
+  $('submissionForm').addEventListener('submit',submitSubmission);
+  $('submissionPriceType').addEventListener('change',updateSubmissionPriceInput);
   $('categoryForm').addEventListener('submit',submitCategory);
   $('addProductButton').addEventListener('click',() => openProductForm());
   $('closeReserve').addEventListener('click',closeReserve);
