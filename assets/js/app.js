@@ -1216,7 +1216,7 @@ async function init() {
   }
   state.client = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
   window.supabaseClient = state.client;
-  if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}),{once:true});
+  if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js?v=4').catch(()=>{}),{once:true});
   // 每个浏览器标识仅会在数据库中写入一次；失败不影响正常浏览商品。
   Promise.resolve(state.client.rpc('track_site_visitor',{p_client_id:browserClientId()})).catch(()=>{});
   subscribePresence();
