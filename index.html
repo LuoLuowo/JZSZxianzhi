@@ -7,14 +7,14 @@
   <title>焦大师专闲置好物平台</title>
   <link rel="preconnect" href="https://znrnaeebnuadbxyqaild.supabase.co" crossorigin>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-  <link rel="icon" type="image/png" href="assets/images/site-mark.png">
+  <link rel="icon" type="image/webp" href="assets/images/site-mark.webp">
   <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
   <div class="notice" id="notice"></div>
   <header class="header">
     <div class="header-inner">
-      <a class="logo site-brand" href="#" id="homeLink" aria-label="返回首页"><picture><source media="(max-width:760px)" srcset="assets/images/site-mark.png"><img class="site-logo" src="assets/images/site-logo.png" alt="焦大师专 校园闲置好物"></picture></a>
+      <a class="logo site-brand" href="#" id="homeLink" aria-label="返回首页"><picture><source media="(max-width:760px)" srcset="assets/images/site-mark.webp"><img class="site-logo" src="assets/images/site-logo.webp" alt="焦大师专 校园闲置好物" width="600" height="200" decoding="async" fetchpriority="high"></picture></a>
       <div class="nav-search">
         <input id="navSearch" type="search" placeholder="搜索闲置好物…" aria-label="搜索商品">
         <button id="navSearchButton" aria-label="搜索">⌕</button>
@@ -41,7 +41,26 @@
 
   <div class="modal-backdrop" id="introductionModal"><section class="modal introduction-modal" role="dialog" aria-modal="true" aria-labelledby="introductionTitle"><div class="modal-head"><h3 class="modal-title" id="introductionTitle">焦大师专闲置好物平台介绍</h3><button class="close-btn" data-close="introductionModal">×</button></div><div class="modal-body introduction-body"><div class="introduction-content" id="introductionContent"></div><img id="introductionImage" alt="网站介绍图片" hidden></div></section></div>
 
-  <div class="modal-backdrop" id="submissionModal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="submissionTitle"><div class="modal-head"><h3 class="modal-title" id="submissionTitle">我要发布闲置</h3><button class="close-btn" data-close="submissionModal">×</button></div><div class="modal-body"><div class="submission-warning">⚠️ 请勿发布任何无关、违规等内容！<br>发布内容需要管理员审核，通过后即可上架闲置。</div><form id="submissionForm"><div class="field-group"><label class="label" for="submissionProductTitle">商品标题</label><input class="field" id="submissionProductTitle" maxlength="120" required placeholder="如：高等数学教材"></div><div class="field-group"><label class="label" for="submissionDescription">详细描述（可选）</label><textarea class="field" id="submissionDescription" maxlength="3000" placeholder="成色、配件、交易说明等"></textarea></div><div class="field-group"><label class="label" for="submissionPriceType">价格方式</label><select class="field" id="submissionPriceType"><option value="fixed">固定价格</option><option value="negotiable">面议</option><option value="at_most">多少元及以下</option></select></div><div class="field-row"><div class="field-group"><label class="label" id="submissionPriceLabel" for="submissionPrice">价格（元）</label><input class="field" id="submissionPrice" type="number" min="0" max="99999999" step="0.01" required></div><div class="field-group"><label class="label" for="submissionCondition">成色</label><select class="field" id="submissionCondition" required><option value="">请选择</option><option>全新</option><option>几乎全新</option><option>轻微使用痕迹</option><option>明显使用痕迹</option></select></div></div><div class="field-group"><label class="label" for="submissionCategory">分类</label><select class="field" id="submissionCategory" required></select></div><div class="field-group"><label class="label" for="submissionQuantity">商品数量</label><input class="field" id="submissionQuantity" type="number" min="1" max="9999" value="1" required></div><div class="field-group"><label class="label" for="submissionContact">卖家微信</label><input class="field" id="submissionContact" maxlength="120" required pattern="[A-Za-z0-9._-]+" title="仅支持英文字母、数字和 . _ - 符号" autocapitalize="off" spellcheck="false" placeholder="仅支持字母、数字和 . _ - 符号"></div><div class="field-group"><label class="label" for="submissionImageUrl">图片 URL（可选）</label><input class="field" id="submissionImageUrl" type="url" placeholder="https://example.com/image.jpg"></div><div class="field-group"><label class="label" for="submissionImage">上传图片（可选）</label><input class="field" id="submissionImage" type="file" accept="image/*"><div class="hint" id="submissionImageHint">本地图片会压缩为 WebP，目标大小约 150KB 以内。</div></div><div class="error" id="submissionError"></div><button class="submit" id="submissionSubmit" type="submit">提交管理员审核</button></form></div></section></div>
+    <div class="modal-backdrop" id="submissionModal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="submissionTitle">
+        <div class="modal-head"><h3 class="modal-title" id="submissionTitle">我要发布闲置</h3><button class="close-btn" data-close="submissionModal">×</button></div>
+        <div class="modal-body">
+          <div class="submission-warning">⚠️ 请勿发布任何无关、违规等内容！<br>发布内容需要管理员审核，通过后即可上架闲置。</div>
+          <form id="submissionForm">
+            <div class="field-group"><label class="label" for="submissionProductTitle">商品标题</label><input class="field" id="submissionProductTitle" maxlength="120" required placeholder="如：高等数学教材"></div>
+            <div class="field-group"><label class="label" for="submissionDescription">详细描述（可选）</label><textarea class="field" id="submissionDescription" maxlength="3000" placeholder="成色、配件、交易说明等"></textarea></div>
+            <div class="field-group"><label class="label" for="submissionPriceType">价格方式</label><select class="field" id="submissionPriceType"><option value="fixed">固定价格</option><option value="negotiable">面议</option><option value="at_most">多少元及以下</option></select></div>
+            <div class="field-row"><div class="field-group"><label class="label" id="submissionPriceLabel" for="submissionPrice">价格（元）</label><input class="field" id="submissionPrice" type="number" min="0" max="99999999" step="0.01" required></div><div class="field-group"><label class="label" for="submissionCondition">成色</label><select class="field" id="submissionCondition" required><option value="">请选择</option><option>全新</option><option>几乎全新</option><option>轻微使用痕迹</option><option>明显使用痕迹</option></select></div></div>
+            <div class="field-group"><label class="label" for="submissionCategory">分类</label><select class="field" id="submissionCategory" required></select></div>
+            <div class="field-group"><label class="label" for="submissionQuantity">商品数量</label><input class="field" id="submissionQuantity" type="number" min="1" max="9999" value="1" required></div>
+            <div class="field-group"><label class="label" for="submissionContact">卖家微信</label><input class="field" id="submissionContact" maxlength="120" required pattern="[A-Za-z0-9._-]+" title="仅支持英文字母、数字和 . _ - 符号" autocapitalize="off" spellcheck="false" placeholder="仅支持字母、数字和 . _ - 符号"></div>
+            <div class="field-group"><label class="label" for="submissionImageUrl">图片 URL（可选）</label><input class="field" id="submissionImageUrl" type="url" placeholder="https://example.com/image.jpg"></div>
+            <div class="field-group"><label class="label" for="submissionImage">上传图片（可选）</label><input class="field" id="submissionImage" type="file" accept="image/*"><div class="hint" id="submissionImageHint">本地图片会压缩为 WebP，目标大小约 120KB 以内。</div></div>
+            <div class="error" id="submissionError"></div><button class="submit" id="submissionSubmit" type="submit">提交管理员审核</button>
+          </form>
+        </div>
+      </section>
+    </div>
   <div class="modal-backdrop" id="submissionResultModal"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><h3 class="modal-title">已提交审核</h3><button class="close-btn" data-close="submissionResultModal">×</button></div><div class="modal-body submission-result"><div class="empty-icon">⏳</div><p>您的闲置已提交管理员审核中。</p><p>如需加急，请联系管理员：<strong>minixxx999</strong></p><button class="btn btn-primary" type="button" data-close="submissionResultModal">知道了</button></div></section></div>
 
   <div class="modal-backdrop" id="connectionModal">
@@ -119,7 +138,7 @@
           <div class="field-group"><label class="label" for="productQuantity">商品数量</label><input class="field" id="productQuantity" type="number" min="1" max="9999" value="1" required></div>
           <div class="field-group"><label class="label" for="sellerContact">卖家微信（可选，仅管理员查看）</label><input class="field" id="sellerContact" maxlength="120" pattern="[A-Za-z0-9._-]+" title="仅支持英文字母、数字和 . _ - 符号" autocapitalize="off" spellcheck="false" placeholder="仅支持字母、数字和 . _ - 符号"></div>
           <div class="field-group"><label class="label" for="productImageUrl">图片 URL（可选）</label><input class="field" id="productImageUrl" type="url" placeholder="https://example.com/image.jpg"><div class="hint">URL 将直接保存并作为商品图片显示，不下载、不转换。</div></div>
-          <div class="field-group"><label class="label" for="productImage">上传图片（可选）</label><input class="field" id="productImage" type="file" accept="image/*"><div class="hint" id="imageHint">本地图片会压缩为 WebP，目标大小约 150KB 以内。</div></div>
+          <div class="field-group"><label class="label" for="productImage">上传图片（可选）</label><input class="field" id="productImage" type="file" accept="image/*"><div class="hint" id="imageHint">本地图片会压缩为 WebP，目标大小约 120KB 以内。</div></div>
           <div class="error" id="productError"></div><div class="form-submit-actions"><button class="btn btn-primary" id="productSubmitContinue" type="submit">保存并继续添加</button><button class="btn btn-ghost" id="productSubmit" type="submit">保存并关闭</button></div>
         </form>
       </div>

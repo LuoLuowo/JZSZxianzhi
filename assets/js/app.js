@@ -141,8 +141,8 @@ function productMedia(product, zoomable=false) {
   const imageUrl=escapeHtml(product.image_url||'');
   const image = imageUrl
     ? zoomable
-      ? `<img class="zoomable-image product-image-loaded" src="${imageUrl}" data-full-image="${imageUrl}" alt="${escapeHtml(product.title)}" loading="eager" decoding="async" fetchpriority="high" onerror="this.remove()">`
-      : `<img class="deferred-product-image" data-src="${imageUrl}" alt="${escapeHtml(product.title)}" loading="lazy" decoding="async" fetchpriority="low" onload="this.classList.add('product-image-loaded')" onerror="this.remove()">`
+      ? `<img class="zoomable-image product-image-loaded" src="${imageUrl}" data-full-image="${imageUrl}" alt="${escapeHtml(product.title)}" loading="eager" decoding="async" fetchpriority="high" referrerpolicy="no-referrer" onerror="this.remove()">`
+      : `<img class="deferred-product-image" data-src="${imageUrl}" alt="${escapeHtml(product.title)}" width="640" height="480" loading="eager" decoding="async" fetchpriority="low" referrerpolicy="no-referrer">`
     : '';
   return `${escapeHtml(icon)}${image}`;
 }
@@ -150,9 +150,41 @@ function productMedia(product, zoomable=false) {
 function scheduleProductImages() {
   const images=[...$('productGrid').querySelectorAll('img[data-src]')];
   if(!images.length)return;
-  const load=()=>images.forEach(image=>{if(!image.isConnected||!image.dataset.src)return;image.src=image.dataset.src;delete image.dataset.src;});
-  if('requestIdleCallback' in window)window.requestIdleCallback(load,{timeout:600});
-  else setTimeout(load,30);
+  const connection=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+  const slowNetwork=Boolean(connection?.saveData)||/2g/.test(connection?.effectiveType||'');
+  const deviceMemory=Number(navigator.deviceMemory||4);
+  const concurrency=slowNetwork||deviceMemory<=2?2:deviceMemory<=4?3:6;
+  const priorityCount=window.innerWidth<=760?4:8;
+
+  const loadImage=image=>new Promise(resolve=>{
+    if(!image.isConnected||!image.dataset.src)return resolve();
+    const source=image.dataset.src;
+    let settled=false;
+    let retryCount=0;
+    const finish=()=>{if(settled)return;settled=true;clearTimeout(timeout);resolve();};
+    const start=()=>{
+      image.onload=()=>{image.classList.add('product-image-loaded');finish();};
+      image.onerror=()=>{
+        if(settled)return;
+        if(!navigator.onLine){image.removeAttribute('src');image.dataset.src=source;return finish();}
+        if(retryCount<1&&image.isConnected){retryCount+=1;setTimeout(()=>{image.src='';start();},600);}
+        else{image.remove();finish();}
+      };
+      image.src=source;
+      delete image.dataset.src;
+      if(image.complete&&image.naturalWidth){image.classList.add('product-image-loaded');finish();}
+    };
+    const timeout=setTimeout(finish,slowNetwork?12000:8000);
+    start();
+  });
+
+  const startQueue=async()=>{
+    images.forEach((image,index)=>image.setAttribute('fetchpriority',index<priorityCount?'high':'low'));
+    let cursor=0;
+    const worker=async()=>{while(cursor<images.length){const image=images[cursor++];await loadImage(image);}};
+    await Promise.all(Array.from({length:Math.min(concurrency,images.length)},worker));
+  };
+  requestAnimationFrame(startQueue);
 }
 
 async function loadCategories() {
@@ -596,7 +628,7 @@ function openProductForm(product=null) {
   $('productSubmitContinue').hidden=!!product;
   $('sellerContact').value = product?.seller_contact || '';
   $('productImageUrl').value = '';
-  $('imageHint').textContent = product?.image_url ? '当前已有图片；上传新图片或输入 URL 会替换它。本地图片会压缩至约 150KB 以内。' : '本地图片会压缩为 WebP，目标大小约 150KB 以内。';
+  $('imageHint').textContent = product?.image_url ? '当前已有图片；上传新图片或输入 URL 会替换它。本地图片会压缩至约 120KB 以内。' : '本地图片会压缩为 WebP，目标大小约 120KB 以内。';
   openModal('productModal');
 }
 
@@ -607,8 +639,8 @@ async function compressToWebp(blob) {
     const image = new Image();
     image.src = objectUrl;
     await image.decode();
-    const targetBytes = 150*1024;
-    let scale = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight));
+    const targetBytes = 120*1024;
+    let scale = Math.min(1, 1280 / Math.max(image.naturalWidth, image.naturalHeight));
     let quality = .84;
     let output;
     for (let attempt=0; attempt<18; attempt++) {
@@ -622,7 +654,7 @@ async function compressToWebp(blob) {
       if (quality > .42) quality -= .07;
       else { scale *= .82; quality = .68; }
     }
-    if (!output || output.size > targetBytes) throw new Error('图片过大，压缩后仍超过 150KB，请换一张图片');
+    if (!output || output.size > targetBytes) throw new Error('图片过大，压缩后仍超过 120KB，请换一张图片');
     return output;
   } finally {
     URL.revokeObjectURL(objectUrl);
@@ -655,7 +687,7 @@ function openSubmissionForm() {
   $('submissionContact').placeholder='请填写正确微信号才能审核通过！';
   $('submissionQuantity').value=1;
   $('submissionError').textContent='';
-  $('submissionImageHint').textContent='本地图片会压缩为 WebP，目标大小约 150KB 以内。';
+  $('submissionImageHint').textContent='本地图片会压缩为 WebP，目标大小约 120KB 以内。';
   updateSubmissionPriceInput();
   openModal('submissionModal');
 }
@@ -738,7 +770,7 @@ async function submitProduct(event) {
       updateProductPriceInput();
       $('productQuantity').min=1;
       $('productFormTitle').textContent='继续发布闲置';
-      $('imageHint').textContent='本地图片会压缩为 WebP，目标大小约 150KB 以内。';
+      $('imageHint').textContent='本地图片会压缩为 WebP，目标大小约 120KB 以内。';
       $('productError').textContent='';
       setTimeout(()=>$('productTitle').focus(),50);
     } else closeModal('productModal');
@@ -1003,6 +1035,7 @@ function bindEvents() {
   document.addEventListener('keydown',event => { if(event.key==='Escape'){closeSortMenu();state.pendingConfirm=null;document.querySelectorAll('.modal-backdrop.open').forEach(m=>closeModal(m.id));closeReserve();} });
   let currentPageSize=productsPerPage();
   window.addEventListener('resize',debounce(()=>{const next=productsPerPage();fitHeroHeadline();updateCategoryScrollHint();if(next!==currentPageSize){currentPageSize=next;state.page=1;loadProducts();}},250));
+  window.addEventListener('online',()=>{if($('productGrid').querySelector('img[data-src]'))scheduleProductImages();else loadProducts();});
 }
 
 async function init() {
@@ -1018,6 +1051,7 @@ async function init() {
   }
   state.client = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
   window.supabaseClient = state.client;
+  if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}),{once:true});
   // 每个浏览器标识仅会在数据库中写入一次；失败不影响正常浏览商品。
   Promise.resolve(state.client.rpc('track_site_visitor',{p_client_id:browserClientId()})).catch(()=>{});
   subscribePresence();
