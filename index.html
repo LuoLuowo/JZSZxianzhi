@@ -37,6 +37,7 @@
     <h1 class="hero-title" id="heroHeadline">发现校园好物</h1>
     <p class="hero-subtitle" id="heroSubtitle">校内二手闲置交换，教材、数码、生活好物，轻松找到下一位主人。</p>
     <div class="main-search"><input id="mainSearch" type="search" placeholder="搜索标题或商品描述…"><button id="mainSearchButton">搜索</button></div>
+    <div class="hot-searches" id="hotSearches" hidden><span class="hot-search-label">近期热搜：</span><div class="hot-search-list" id="hotSearchList"></div></div>
   </section>
 
   <div class="modal-backdrop" id="introductionModal"><section class="modal introduction-modal" role="dialog" aria-modal="true" aria-labelledby="introductionTitle"><div class="modal-head"><h3 class="modal-title" id="introductionTitle">焦大师专闲置好物平台介绍</h3><button class="close-btn" data-close="introductionModal">×</button></div><div class="modal-body introduction-body"><div class="introduction-content" id="introductionContent"></div><img id="introductionImage" alt="网站介绍图片" hidden></div></section></div>
@@ -71,8 +72,6 @@
   </div>
 
   <nav class="categories" aria-label="闲置分类"><div class="category-list" id="categoryList"><button class="category-tag active" data-category="all">全部</button></div><button class="category-scroll-hint" id="categoryScrollHint" type="button" aria-label="查看更多分类" title="查看更多分类">›</button></nav>
-  <div class="hot-searches" id="hotSearches" hidden><span class="hot-search-label">近期热搜</span><div class="hot-search-list" id="hotSearchList"></div></div>
-
   <main class="main">
     <div class="section-head"><div class="listing-tabs" role="tablist" aria-label="闲置列表"><button class="listing-tab" id="recommendedProductsButton" type="button" role="tab" aria-selected="false">⭐ 推荐闲置</button><button class="listing-tab active" id="latestProductsButton" type="button" role="tab" aria-selected="true">🕒 最新闲置</button></div><span class="result-count" id="resultCount">正在获取商品…</span></div>
     <div class="filter-bar" aria-label="商品筛选与排序">
@@ -104,6 +103,7 @@
     <div class="drawer-handle"></div><div class="drawer-head"><h3 id="reserveTitle">我想要这个闲置</h3><button class="close-btn" id="closeReserve">×</button></div>
     <div class="drawer-body">
       <div class="reserve-summary" id="reserveSummary"></div>
+      <div class="detail-share-row"><span>分享给同学，扫码直达这个好物</span><button class="btn btn-ghost btn-small" id="shareProductButton" type="button" disabled>海报准备中…</button></div>
       <form id="reserveForm" autocomplete="off">
         <div class="field-group"><label class="label" for="buyerName">称呼您</label><input class="field" id="buyerName" maxlength="6" required autocomplete="off" placeholder="最多输入6个文字"></div>
         <div class="field-group"><label class="label" for="buyerContact">您的微信号</label><input class="field" id="buyerContact" maxlength="120" required pattern="[A-Za-z0-9._-]+" title="仅支持英文字母、数字和 . _ - 符号" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="请输入您的交换微信号"></div>
@@ -167,10 +167,13 @@
 
   <div class="modal-backdrop image-lightbox" id="imageLightbox"><section class="image-lightbox-panel" role="dialog" aria-modal="true" aria-labelledby="zoomImageTitle"><div class="image-lightbox-head"><strong id="zoomImageTitle">商品图片</strong><button class="close-btn" data-close="imageLightbox">×</button></div><img id="zoomImage" alt="商品大图"></section></div>
 
+  <div class="modal-backdrop" id="sharePosterModal"><section class="modal share-poster-modal" role="dialog" aria-modal="true" aria-labelledby="sharePosterTitle"><div class="modal-head"><h3 class="modal-title" id="sharePosterTitle">分享商品海报</h3><button class="close-btn" data-close="sharePosterModal">×</button></div><div class="modal-body share-poster-body"><p>长按海报可保存，二维码扫码后会直接打开该商品。</p><img id="sharePosterImage" alt="商品分享海报"><div class="share-poster-actions"><button class="btn btn-ghost" id="downloadPosterButton" type="button">保存海报</button><button class="btn btn-primary" id="nativeSharePosterButton" type="button">分享海报</button></div></div></section></div>
+
   <button class="fab" id="addProductButton" aria-label="添加闲置">+</button>
   <div class="toast" id="toast" role="status"><span class="toast-icon" id="toastIcon">✓</span><span id="toastText">操作成功</span></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0"></script>
+  <script src="assets/js/vendor/qrcode.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>

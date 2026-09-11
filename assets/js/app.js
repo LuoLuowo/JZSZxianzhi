@@ -25,7 +25,11 @@ const state = {
   publicSettings: {announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},
   channel: null,
   presenceChannel: null,
-  productRequestId: 0
+  productRequestId: 0,
+  shareQrCodes: new Map(),
+  sharePosterBlob: null,
+  sharePosterUrl: '',
+  sharePrepareToken: 0
 };
 
 const $ = id => document.getElementById(id);
@@ -206,7 +210,7 @@ async function loadHotSearches() {
 }
 
 function renderHotSearches() {
-  $('hotSearchList').innerHTML=state.hotSearches.map(item=>{const active=state.search===item.keyword;return `<button class="hot-search-tag ${active?'active':''}" type="button" data-hot-search="${escapeHtml(item.keyword)}" aria-pressed="${active}">🔥 ${escapeHtml(item.keyword)}${active?' ×':''}</button>`;}).join('');
+  $('hotSearchList').innerHTML=state.hotSearches.map(item=>`<span class="hot-search-item">${escapeHtml(item.keyword)}</span>`).join('');
   $('hotSearches').hidden=!state.hotSearches.length;
 }
 
@@ -367,6 +371,7 @@ function renderProducts() {
       </div>
     </article>`).join('');
   scheduleProductImages();
+  primeProductQrCodes(state.products);
 }
 
 function renderPagination() {
@@ -419,6 +424,227 @@ function resetHome(event) {
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
+function productShareUrl(productId) {
+  const url=new URL('https://www.jzszhw.bond/');
+  url.searchParams.set('product',productId);
+  return url.href;
+}
+
+function ensureProductQrCode(product) {
+  if(state.shareQrCodes.has(product.id))return state.shareQrCodes.get(product.id);
+  const promise=Promise.resolve().then(()=>{
+    if(typeof window.qrcode!=='function')throw new Error('二维码组件尚未加载');
+    const qr=window.qrcode(0,'M');
+    qr.addData(productShareUrl(product.id));
+    qr.make();
+    return qr.createDataURL(8,4);
+  });
+  state.shareQrCodes.set(product.id,promise);
+  return promise;
+}
+
+function primeProductQrCodes(products) {
+  const queue=products.filter(product=>!state.shareQrCodes.has(product.id));
+  const prime=index=>{
+    if(index>=queue.length)return;
+    ensureProductQrCode(queue[index]).catch(()=>state.shareQrCodes.delete(queue[index].id));
+    setTimeout(()=>prime(index+1),35);
+  };
+  prime(0);
+}
+
+function loadPosterImage(src) {
+  return new Promise((resolve,reject)=>{
+    const image=new Image();
+    image.onload=()=>resolve(image);
+    image.onerror=reject;
+    image.src=src;
+  });
+}
+
+function roundedRect(ctx,x,y,width,height,radius) {
+  const r=Math.min(radius,width/2,height/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+width,y,x+width,y+height,r);
+  ctx.arcTo(x+width,y+height,x,y+height,r);
+  ctx.arcTo(x,y+height,x,y,r);
+  ctx.arcTo(x,y,x+width,y,r);
+  ctx.closePath();
+}
+
+function fitCanvasText(ctx,text,maxWidth) {
+  const chars=Array.from(String(text||''));
+  while(chars.length&&ctx.measureText(`${chars.join('')}…`).width>maxWidth)chars.pop();
+  return chars.length<String(text||'').length?`${chars.join('')}…`:chars.join('');
+}
+
+function drawWrappedCanvasText(ctx,text,x,y,maxWidth,lineHeight,maxLines=2) {
+  const chars=Array.from(String(text||''));
+  const lines=[];
+  let line='';
+  for(const char of chars){
+    if(ctx.measureText(line+char).width>maxWidth&&line){lines.push(line);line=char;if(lines.length===maxLines)break;}
+    else line+=char;
+  }
+  if(lines.length<maxLines&&line)lines.push(line);
+  const consumed=lines.join('').length;
+  if(consumed<chars.length&&lines.length)lines[lines.length-1]=fitCanvasText(ctx,lines[lines.length-1],maxWidth);
+  lines.slice(0,maxLines).forEach((value,index)=>ctx.fillText(value,x,y+index*lineHeight));
+  return y+Math.min(lines.length,maxLines)*lineHeight;
+}
+
+function posterPriceText(product) {
+  if(product.price_type==='negotiable')return Number(product.price)>0?`面议 · 参考 ¥${money(product.price)}`:'价格面议';
+  if(product.price_type==='at_most')return `¥${money(product.price)} 及以下`;
+  return `¥${money(product.price)}`;
+}
+
+function drawPosterCover(ctx,cover,x,y,width,height) {
+  const sourceWidth=cover.width||cover.naturalWidth;
+  const sourceHeight=cover.height||cover.naturalHeight;
+  const scale=Math.max(width/sourceWidth,height/sourceHeight);
+  const sourceCropWidth=width/scale;
+  const sourceCropHeight=height/scale;
+  const sourceX=(sourceWidth-sourceCropWidth)/2;
+  const sourceY=(sourceHeight-sourceCropHeight)/2;
+  ctx.save();roundedRect(ctx,x,y,width,height,34);ctx.clip();
+  ctx.drawImage(cover,sourceX,sourceY,sourceCropWidth,sourceCropHeight,x,y,width,height);
+  ctx.restore();
+}
+
+async function buildSharePoster(product,qrDataUrl,cover=null) {
+  const canvas=document.createElement('canvas');
+  canvas.width=900;canvas.height=1200;
+  const ctx=canvas.getContext('2d',{alpha:false});
+  const background=ctx.createLinearGradient(0,0,900,1200);
+  background.addColorStop(0,'#effbf8');background.addColorStop(.55,'#f8fbff');background.addColorStop(1,'#fff7e7');
+  ctx.fillStyle=background;ctx.fillRect(0,0,900,1200);
+
+  ctx.fillStyle='rgba(0,169,143,.11)';ctx.beginPath();ctx.arc(780,100,190,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(232,163,23,.13)';ctx.beginPath();ctx.arc(85,1110,170,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#00a98f';ctx.beginPath();ctx.arc(78,82,34,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#fff';ctx.font='800 28px system-ui,"Microsoft YaHei"';ctx.textAlign='center';ctx.fillText('焦',78,92);
+  ctx.textAlign='left';ctx.fillStyle='#14252a';ctx.font='800 34px system-ui,"Microsoft YaHei"';ctx.fillText('焦专好物平台',130,78);
+  ctx.fillStyle='#617177';ctx.font='500 20px system-ui,"Microsoft YaHei"';ctx.fillText('校园闲置好物 · 等你来发现',130,112);
+
+  const coverX=55,coverY=155,coverWidth=790,coverHeight=455;
+  if(cover)drawPosterCover(ctx,cover,coverX,coverY,coverWidth,coverHeight);
+  else{
+    const placeholder=ctx.createLinearGradient(coverX,coverY,coverX+coverWidth,coverY+coverHeight);
+    placeholder.addColorStop(0,'#d8f4ed');placeholder.addColorStop(1,'#dfeaff');
+    ctx.fillStyle=placeholder;roundedRect(ctx,coverX,coverY,coverWidth,coverHeight,34);ctx.fill();
+    ctx.textAlign='center';ctx.font='700 82px system-ui,"Microsoft YaHei"';ctx.fillStyle='#00a98f';ctx.fillText(product.category_icon||'✨',450,350);
+    ctx.font='700 28px system-ui,"Microsoft YaHei"';ctx.fillStyle='#477078';ctx.fillText('焦作师专校园好物',450,420);ctx.textAlign='left';
+  }
+
+  ctx.fillStyle='#14252a';ctx.font='800 42px system-ui,"Microsoft YaHei"';
+  drawWrappedCanvasText(ctx,product.title,65,680,770,56,2);
+  ctx.fillStyle='#00a98f';ctx.font='900 45px system-ui,"Microsoft YaHei"';ctx.fillText(posterPriceText(product),65,810);
+  ctx.fillStyle='#617177';ctx.font='600 22px system-ui,"Microsoft YaHei"';
+  ctx.fillText(`${product.category_icon||'📦'} ${product.category_name||'校园闲置'}  ·  ${product.condition||'成色良好'}  ·  剩余 ${product.available_quantity} 件`,65,852);
+
+  ctx.fillStyle='#fff';roundedRect(ctx,55,900,790,245,32);ctx.fill();
+  ctx.strokeStyle='rgba(0,169,143,.18)';ctx.lineWidth=2;roundedRect(ctx,55,900,790,245,32);ctx.stroke();
+  ctx.fillStyle='#14252a';ctx.font='900 35px system-ui,"Microsoft YaHei"';ctx.fillText('扫码查看商品详情',90,970);
+  ctx.fillStyle='#00a98f';ctx.font='800 27px system-ui,"Microsoft YaHei"';ctx.fillText('喜欢就来带走它',90,1018);
+  ctx.fillStyle='#617177';ctx.font='500 19px system-ui,"Microsoft YaHei"';ctx.fillText('校内闲置流转，让好物继续发光',90,1062);
+  ctx.fillStyle='#8a989c';ctx.font='500 16px system-ui,"Microsoft YaHei"';ctx.fillText('www.jzszhw.bond',90,1104);
+
+  const qrImage=await loadPosterImage(qrDataUrl);
+  ctx.fillStyle='#fff';roundedRect(ctx,585,922,218,218,22);ctx.fill();
+  ctx.drawImage(qrImage,600,937,188,188);
+  return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('海报生成失败')),'image/jpeg',.9));
+}
+
+async function fetchPosterCover(url) {
+  if(!url)return null;
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),3500);
+  try{
+    const response=await fetch(url,{mode:'cors',credentials:'omit',cache:'force-cache',referrerPolicy:'no-referrer',signal:controller.signal});
+    if(!response.ok)throw new Error('商品图片不可读取');
+    const blob=await response.blob();
+    if('createImageBitmap' in window)return {image:await createImageBitmap(blob),dispose(image){image.close?.();}};
+    const objectUrl=URL.createObjectURL(blob);
+    return {image:await loadPosterImage(objectUrl),dispose(){URL.revokeObjectURL(objectUrl);}};
+  } finally {clearTimeout(timer);}
+}
+
+function setSharePoster(product,blob,token) {
+  if(token!==state.sharePrepareToken)return;
+  if(state.sharePosterUrl)URL.revokeObjectURL(state.sharePosterUrl);
+  state.sharePosterBlob=blob;
+  state.sharePosterUrl=URL.createObjectURL(blob);
+  $('sharePosterImage').src=state.sharePosterUrl;
+  $('sharePosterTitle').textContent=`分享：${product.title}`;
+  $('shareProductButton').disabled=false;
+  $('shareProductButton').textContent='📣 分享商品海报';
+}
+
+async function prepareSharePoster(product) {
+  const token=++state.sharePrepareToken;
+  state.sharePosterBlob=null;
+  $('shareProductButton').disabled=true;
+  $('shareProductButton').textContent='海报准备中…';
+  try{
+    const qrDataUrl=await ensureProductQrCode(product);
+    const fallbackPoster=await buildSharePoster(product,qrDataUrl);
+    setSharePoster(product,fallbackPoster,token);
+    try{
+      const cover=await fetchPosterCover(product.image_url);
+      if(!cover||token!==state.sharePrepareToken){cover?.dispose(cover.image);return;}
+      const imagePoster=await buildSharePoster(product,qrDataUrl,cover.image);
+      cover.dispose(cover.image);
+      setSharePoster(product,imagePoster,token);
+    }catch{}
+  }catch{
+    if(token===state.sharePrepareToken){$('shareProductButton').disabled=true;$('shareProductButton').textContent='海报暂不可用';}
+  }
+}
+
+function openSharePoster() {
+  if(!state.sharePosterBlob||!state.sharePosterUrl)return;
+  openModal('sharePosterModal');
+}
+
+function posterFileName() {
+  const title=String(state.reserveProduct?.title||'校园闲置好物').replace(/[\\/:*?"<>|]/g,'').slice(0,30);
+  return `焦专好物-${title}.jpg`;
+}
+
+function downloadSharePoster(showToast=true) {
+  if(!state.sharePosterUrl)return;
+  const link=document.createElement('a');link.href=state.sharePosterUrl;link.download=posterFileName();document.body.appendChild(link);link.click();link.remove();
+  if(showToast)toast('商品海报已保存');
+}
+
+async function nativeSharePoster() {
+  if(!state.sharePosterBlob||!state.reserveProduct)return;
+  const product=state.reserveProduct;
+  const file=new File([state.sharePosterBlob],posterFileName(),{type:'image/jpeg'});
+  if(navigator.share&&navigator.canShare?.({files:[file]})){
+    try{await navigator.share({title:product.title,text:'焦专好物平台发现一个校园闲置好物',files:[file]});}catch(error){if(error?.name!=='AbortError')toast('分享失败，请保存海报后发送',false);}
+    return;
+  }
+  downloadSharePoster(false);
+  try{await navigator.clipboard.writeText(productShareUrl(product.id));toast('海报已保存，商品链接已复制');}
+  catch{toast('海报已保存，可直接发送给同学');}
+}
+
+async function openSharedProductFromUrl() {
+  const productId=new URLSearchParams(location.search).get('product');
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(productId||''))return;
+  let product=state.products.find(item=>item.id===productId);
+  if(!product){
+    const {data,error}=await state.client.from('product_feed').select('*').eq('id',productId).maybeSingle();
+    if(error||!data)return toast('分享的商品不存在或已下架',false);
+    product=data;
+  }
+  ensureProductQrCode(product).catch(()=>{});
+  openReserve(product);
+}
+
 function openReserve(product) {
   if (!product) return;
   if (product.status !== 'available') {
@@ -430,6 +656,7 @@ function openReserve(product) {
   $('reserveForm').reset();
   $('reserveError').textContent = '';
   $('reserveSummary').innerHTML = `<div class="product-media">${productMedia(product,true)}</div><div class="reserve-info"><h4>${escapeHtml(product.title)}</h4><div class="price">${priceText(product)}</div><div class="detail-stock">剩余 ${product.available_quantity} 件</div></div><div class="detail-description">${escapeHtml(product.description || '暂无详细描述')}</div>`;
+  prepareSharePoster(product);
   $('reserveBackdrop').classList.add('open');
   $('reserveDrawer').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -950,6 +1177,9 @@ function bindEvents() {
   $('reserveForm').addEventListener('submit',submitReservation);
   $('buyerContact').addEventListener('input',event=>{event.target.value=event.target.value.replace(/[^A-Za-z0-9._-]/g,'');});
   $('reserveSummary').addEventListener('click',event => {const image=event.target.closest('[data-full-image]');if(image)openImageLightbox(image.dataset.fullImage,image.alt);});
+  $('shareProductButton').addEventListener('click',openSharePoster);
+  $('downloadPosterButton').addEventListener('click',()=>downloadSharePoster());
+  $('nativeSharePosterButton').addEventListener('click',nativeSharePoster);
   $('copyConnectionCode').addEventListener('click',copyConnectionCode);
   $('productForm').addEventListener('submit',submitProduct);
   $('productPriceType').addEventListener('change',updateProductPriceInput);
@@ -975,17 +1205,6 @@ function bindEvents() {
   });
   $('categoryList').addEventListener('scroll',updateCategoryScrollHint,{passive:true});
   $('categoryScrollHint').addEventListener('click',()=>{$('categoryList').scrollBy({left:Math.max(180,$('categoryList').clientWidth*.75),behavior:'smooth'});});
-  $('hotSearchList').addEventListener('click',event=>{
-    const button=event.target.closest('[data-hot-search]');
-    if(!button)return;
-    state.search=state.search===button.dataset.hotSearch?'':button.dataset.hotSearch;
-    state.page=1;
-    $('navSearch').value=state.search;
-    $('mainSearch').value=state.search;
-    renderHotSearches();
-    loadProducts();
-    document.querySelector('.main').scrollIntoView({behavior:'smooth'});
-  });
   $('productGrid').addEventListener('click',event => {
     const card = event.target.closest('[data-product-id]');
     if (card) openReserve(state.products.find(p => p.id===card.dataset.productId));
@@ -1068,6 +1287,7 @@ async function init() {
     ]);
     const publicFailure=results.slice(1).find(result=>result.status==='rejected');
     if(publicFailure)console.warn('部分首页数据加载失败：',publicFailure.reason);
+    await openSharedProductFromUrl();
     subscribeRealtime();
   } catch (error) {
     $('loading').classList.remove('show');
