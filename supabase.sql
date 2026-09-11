@@ -124,6 +124,7 @@ create table public.products (
   image_url text,
   seller_contact text,
   is_pinned boolean not null default false,
+  is_recommended boolean not null default false,
   is_demo boolean not null default false,
   created_at timestamptz not null default now()
 );
@@ -226,6 +227,7 @@ create table public.admin_notifications (
 create index products_category_idx on public.products(category_id);
 create index products_created_idx on public.products(created_at desc);
 create index products_pinned_created_idx on public.products(is_pinned desc, created_at desc);
+create index products_recommended_created_idx on public.products(is_recommended desc, created_at desc);
 create index reservations_product_idx on public.reservations(product_id);
 create index reservations_created_idx on public.reservations(created_at desc);
 create index reservation_rate_limits_updated_idx on public.reservation_rate_limits(updated_at);
@@ -391,10 +393,11 @@ declare
   v_submit_count smallint;
 begin
   if p_client_id is null then raise exception '浏览器标识缺失，请刷新页面后重试'; end if;
-  if nullif(btrim(p_buyer_name),'') is null then raise exception '请填写姓名'; end if;
-  if char_length(btrim(p_buyer_name)) > 40 then raise exception '姓名过长'; end if;
-  if nullif(btrim(p_contact),'') is null then raise exception '请填写联系方式'; end if;
-  if char_length(btrim(p_contact)) > 120 then raise exception '联系方式过长'; end if;
+  if nullif(btrim(p_buyer_name),'') is null then raise exception '请填写称呼'; end if;
+  if char_length(btrim(p_buyer_name)) > 6 then raise exception '称呼最多输入 6 个文字'; end if;
+  if nullif(btrim(p_contact),'') is null then raise exception '请填写您的微信号'; end if;
+  if char_length(btrim(p_contact)) > 120 then raise exception '微信号过长'; end if;
+  if btrim(p_contact) !~ '^[A-Za-z0-9._-]+$' then raise exception '微信号仅支持英文字母、数字和 . _ - 符号'; end if;
   if char_length(coalesce(p_note,'')) > 1000 then raise exception '备注过长'; end if;
 
   select status,quantity,sold_quantity,connection_code into v_status,v_quantity,v_sold_quantity,v_connection_code from public.products where id = p_product_id for update;
@@ -553,7 +556,8 @@ select
   greatest(p.quantity-p.sold_quantity,0) as available_quantity,
   count(r.id) filter (where r.status in ('pending','confirmed'))::integer as wanted_count,
   p.created_at,
-  c.name as category_name,c.icon as category_icon
+  c.name as category_name,c.icon as category_icon,
+  p.is_recommended
 from public.products p
 join public.categories c on c.id=p.category_id
 left join public.reservations r on r.product_id=p.id

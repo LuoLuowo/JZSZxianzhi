@@ -14,7 +14,7 @@ const reservationStatus = {pending:'待处理',confirmed:'已成交',cancelled:'
 const esc = (value='') => String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const dateText = value => value ? new Date(value).toLocaleString('zh-CN') : '-';
 const money = value => Number(value||0).toLocaleString('zh-CN',{maximumFractionDigits:2});
-const priceText = product => product.price_type==='negotiable'?'面议':product.price_type==='at_most'?`¥${money(product.price)} 及以下`:`¥${money(product.price)}`;
+const priceText = product => product.price_type==='negotiable'?(Number(product.price)>0?`面议<br><span class="hint">参考 ¥${money(product.price)}</span>`:'面议'):product.price_type==='at_most'?`¥${money(product.price)} 及以下`:`¥${money(product.price)}`;
 function browserClientId(){const key='jzsf-browser-client-id';let id=localStorage.getItem(key);if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id||'')){id=crypto.randomUUID();localStorage.setItem(key,id);}return id;}
 const normalize = value => String(value||'').toLowerCase().trim();
 const formatBytes = value => {const bytes=Number(value||0);if(bytes<1024)return `${bytes} B`;if(bytes<1048576)return `${(bytes/1024).toFixed(1)} KB`;if(bytes<1073741824)return `${(bytes/1048576).toFixed(2)} MB`;return `${(bytes/1073741824).toFixed(2)} GB`;};
@@ -148,7 +148,7 @@ function table(headers,rows) { return `<div class="data-card"><table class="data
 
 function renderProducts() {
   const data=filtered(state.products,p=>[p.title,p.description,p.connection_code,p.campus,p.seller_contact,p.categories?.name,p.status]);
-  $('adminPageContent').innerHTML=table(['图片','商品码 / 商品','价格与分类','库存','卖家微信','状态 / 时间','操作'],data.map(p=>`<tr><td>${p.image_url?`<img class="table-thumb" src="${esc(p.image_url)}" alt="${esc(p.title)}">`:'<div class="table-thumb">📦</div>'}</td><td><div class="code">${esc(p.connection_code)}</div><strong>${p.is_pinned?'🔝 ':''}${esc(p.title)}</strong><div class="hint">${esc(p.description)}</div></td><td>${priceText(p)}<br>${esc(p.categories?.icon||'📦')} ${esc(p.categories?.name||'未分类')}<br>${esc(p.campus)} · ${esc(p.condition)}</td><td>总数 ${p.quantity}<br>已售 ${p.sold_quantity}<br>剩余 ${p.quantity-p.sold_quantity}</td><td class="private-data">${esc(p.seller_contact||'未填写')}</td><td>${productStatus[p.status]||p.status}<br><span class="hint">${dateText(p.created_at)}</span></td><td><div class="actions"><button class="btn btn-ghost btn-small" data-edit-product="${p.id}">编辑</button>${p.status!=='sold'?`<button class="btn btn-primary btn-small" data-product-status="sold" data-id="${p.id}">标记售罄</button>`:''}${p.status!=='removed'?`<button class="btn btn-ghost btn-small" data-product-status="removed" data-id="${p.id}">下架</button>`:`<button class="btn btn-ghost btn-small" data-product-status="available" data-id="${p.id}">上架</button>`}<button class="btn btn-danger btn-small" data-delete-product="${p.id}">删除</button></div></td></tr>`).join(''));
+  $('adminPageContent').innerHTML=table(['图片','商品码 / 商品','价格与分类','库存','卖家微信','状态 / 时间','操作'],data.map(p=>`<tr><td>${p.image_url?`<img class="table-thumb" src="${esc(p.image_url)}" alt="${esc(p.title)}">`:'<div class="table-thumb">📦</div>'}</td><td><div class="code">${esc(p.connection_code)}</div><strong>${p.is_pinned?'🔝 ':''}${p.is_recommended?'⭐ ':''}${esc(p.title)}</strong><div class="hint">${esc(p.description)}</div></td><td>${priceText(p)}<br>${esc(p.categories?.icon||'📦')} ${esc(p.categories?.name||'未分类')}<br>${esc(p.campus)} · ${esc(p.condition)}</td><td>总数 ${p.quantity}<br>已售 ${p.sold_quantity}<br>剩余 ${p.quantity-p.sold_quantity}</td><td class="private-data">${esc(p.seller_contact||'未填写')}</td><td>${productStatus[p.status]||p.status}<br><span class="hint">${dateText(p.created_at)}</span></td><td><div class="actions"><button class="btn btn-ghost btn-small" data-edit-product="${p.id}">编辑</button>${p.status!=='sold'?`<button class="btn btn-primary btn-small" data-product-status="sold" data-id="${p.id}">标记售罄</button>`:''}${p.status!=='removed'?`<button class="btn btn-ghost btn-small" data-product-status="removed" data-id="${p.id}">下架</button>`:`<button class="btn btn-ghost btn-small" data-product-status="available" data-id="${p.id}">上架</button>`}<button class="btn btn-danger btn-small" data-delete-product="${p.id}">删除</button></div></td></tr>`).join(''));
 }
 
 function renderSubmissions() {
@@ -225,6 +225,7 @@ function openProductEditor(id) {
   $('editProductQuantity').value=product.quantity;
   $('editProductSoldQuantity').value=product.sold_quantity;
   $('editProductPinned').checked=Boolean(product.is_pinned);
+  $('editProductRecommended').checked=Boolean(product.is_recommended);
   $('editSellerContact').value=product.seller_contact||'';
   $('editProductImageUrl').value=product.image_url||'';
   $('editProductImageHint').textContent='上传新图片会替换当前图片，并压缩为约 150KB 以内的 WebP。';
@@ -269,9 +270,9 @@ async function saveProductEdit(event) {
     if(status==='sold')finalSold=quantity;
     if(status==='available'&&finalSold>=quantity)throw new Error('在售商品的已售数量必须小于商品总数量');
     const priceType=$('editProductPriceType').value;
-    const price=priceType==='negotiable'?0:Number($('editProductPrice').value);
+    const price=Number($('editProductPrice').value||0);
     if(!Number.isFinite(price)||price<0)throw new Error('请输入正确的价格');
-    const payload={title:$('editProductTitle').value.trim(),description:$('editProductDescription').value.trim(),price,price_type:priceType,condition:$('editProductCondition').value,category_id:Number($('editProductCategory').value),quantity,sold_quantity:finalSold,seller_contact:$('editSellerContact').value.trim()||null,status,image_url:imageUrl,is_pinned:$('editProductPinned').checked};
+    const payload={title:$('editProductTitle').value.trim(),description:$('editProductDescription').value.trim(),price,price_type:priceType,condition:$('editProductCondition').value,category_id:Number($('editProductCategory').value),quantity,sold_quantity:finalSold,seller_contact:$('editSellerContact').value.trim()||null,status,image_url:imageUrl,is_pinned:$('editProductPinned').checked,is_recommended:$('editProductRecommended').checked};
     const {error}=await db.from('products').update(payload).eq('id',product.id);
     if(error)throw error;
     const oldPath=storagePath(product.image_url);
@@ -342,7 +343,7 @@ function bindEvents() {
 
 function subscribeRealtime() { if(state.channel)return;state.channel=db.channel('admin-dashboard').on('postgres_changes',{event:'*',schema:'public',table:'products'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'product_submissions'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'reservations'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'admin_notifications'},handleNotificationChange).on('postgres_changes',{event:'*',schema:'public',table:'categories'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'hot_searches'},refreshData).subscribe(); }
 function subscribePresence(){if(state.presenceChannel)return;state.presenceChannel=db.channel('site-online',{config:{presence:{key:browserClientId()}}}).on('presence',{event:'sync'},()=>{state.onlineCount=Object.keys(state.presenceChannel.presenceState()).length;if(state.view==='overview'&&!$('adminShell').hidden)renderOverview();}).subscribe(status=>{if(status==='SUBSCRIBED')state.presenceChannel.track({online_at:new Date().toISOString()});});}
-function updateEditProductPriceInput(){const mode=$('editProductPriceType').value;const input=$('editProductPrice');input.disabled=mode==='negotiable';input.required=mode!=='negotiable';$('editProductPriceLabel').textContent=mode==='at_most'?'最高价格（元）':mode==='negotiable'?'价格（面议）':'价格（元）';}
+function updateEditProductPriceInput(){const mode=$('editProductPriceType').value;const input=$('editProductPrice');input.disabled=false;input.required=mode!=='negotiable';input.placeholder=mode==='negotiable'?'可填写大致价格，用于价格排序':'';$('editProductPriceLabel').textContent=mode==='at_most'?'最高价格（元）':mode==='negotiable'?'大致价格（可选）':'价格（元）';}
 
 async function init() {
   const theme=localStorage.getItem('jzsf-admin-theme')||'light';document.documentElement.dataset.theme=theme;$('adminThemeButton').textContent=theme==='dark'?'☀️':'🌙';bindEvents();

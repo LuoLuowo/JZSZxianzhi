@@ -13,6 +13,7 @@ const state = {
   minPrice: null,
   maxPrice: null,
   sort: 'newest',
+  listMode: 'latest',
   page: 1,
   pageSize: 24,
   totalProducts: 0,
@@ -39,7 +40,7 @@ function money(value) {
 }
 
 function priceText(product) {
-  if(product.price_type==='negotiable')return '面议';
+  if(product.price_type==='negotiable')return Number(product.price)>0?`面议 <small>参考 ¥${money(product.price)}</small>`:'面议';
   if(product.price_type==='at_most')return `¥${money(product.price)} 及以下`;
   return `¥${money(product.price)}`;
 }
@@ -276,6 +277,7 @@ async function loadProducts() {
   $('emptyState').classList.remove('show');
   $('pagination').hidden=true;
   let query = state.client.from('product_feed').select('*',{count:'exact'});
+  if(state.listMode==='recommended')query=query.eq('is_recommended',true);
   if (state.categoryId !== 'all') query = query.eq('category_id', Number(state.categoryId));
   const term = state.search.replace(/[%_,().]/g,' ').trim();
   if (term) query = query.or(`title.ilike.%${term}%,description.ilike.%${term}%,category_name.ilike.%${term}%,campus.ilike.%${term}%`);
@@ -302,15 +304,15 @@ async function loadProducts() {
 }
 
 function renderProducts() {
-  $('resultCount').textContent = `共 ${state.totalProducts} 件闲置`;
+  $('resultCount').textContent = `${state.listMode==='recommended'?'推荐 ':''}共 ${state.totalProducts} 件闲置`;
   if (!state.products.length) {
-    showEmpty('🔍','没有找到相关闲置','换个关键词或分类试试吧');
+    showEmpty(state.listMode==='recommended'?'⭐':'🔍',state.listMode==='recommended'?'暂无推荐闲置':'没有找到相关闲置',state.listMode==='recommended'?'管理员设置推荐商品后会显示在这里':'换个关键词或分类试试吧');
     return;
   }
   $('emptyState').classList.remove('show');
   $('productGrid').innerHTML = state.products.map(p => `
     <article class="product-card ${p.status==='sold'?'sold':''}" data-product-id="${p.id}" tabindex="0">
-      <div class="product-media">${productMedia(p)}${p.is_pinned?'<span class="pin-badge">🔝 置顶</span>':''}<span class="status status-${p.status}">${statusText[p.status]}</span></div>
+      <div class="product-media">${productMedia(p)}${p.is_pinned?'<span class="pin-badge">🔝 置顶</span>':p.is_recommended?'<span class="pin-badge">⭐ 推荐</span>':''}<span class="status status-${p.status}">${statusText[p.status]}</span></div>
       <div class="product-body">
         <h3 class="product-title">${escapeHtml(p.title)}</h3>
         <div class="product-row"><span class="price">${priceText(p)}</span><span class="condition">${escapeHtml(p.condition)}</span></div>
@@ -356,10 +358,13 @@ function updateSortControl() {
 }
 
 function clearAllFilters() {
-  state.categoryId='all';state.search='';state.minPrice=null;state.maxPrice=null;state.sort='newest';state.page=1;
+  state.categoryId='all';state.search='';state.minPrice=null;state.maxPrice=null;state.sort='newest';state.listMode='latest';state.page=1;
   $('navSearch').value='';$('mainSearch').value='';$('minPrice').value='';$('maxPrice').value='';
-  renderCategories();renderHotSearches();updateSortControl();loadProducts();
+  renderCategories();renderHotSearches();updateSortControl();updateListModeButtons();loadProducts();
 }
+
+function updateListModeButtons(){const recommended=state.listMode==='recommended';$('recommendedProductsButton').classList.toggle('active',recommended);$('recommendedProductsButton').setAttribute('aria-selected',String(recommended));$('latestProductsButton').classList.toggle('active',!recommended);$('latestProductsButton').setAttribute('aria-selected',String(!recommended));}
+function setListMode(mode){if(state.listMode===mode)return;state.listMode=mode;state.page=1;updateListModeButtons();loadProducts();}
 
 function resetHome(event) {
   event?.preventDefault();
@@ -642,8 +647,9 @@ function openSubmissionForm() {
 
 function updateSubmissionPriceInput() {
   const mode=$('submissionPriceType').value,input=$('submissionPrice');
-  input.disabled=mode==='negotiable'; input.required=mode!=='negotiable';
-  $('submissionPriceLabel').textContent=mode==='at_most'?'最高价格（元）':mode==='negotiable'?'价格（面议）':'价格（元）';
+  input.disabled=false; input.required=mode!=='negotiable';
+  input.placeholder=mode==='negotiable'?'可填写大致价格，用于价格排序':'';
+  $('submissionPriceLabel').textContent=mode==='at_most'?'最高价格（元）':mode==='negotiable'?'大致价格（可选）':'价格（元）';
 }
 
 async function submitSubmission(event) {
@@ -653,7 +659,7 @@ async function submitSubmission(event) {
   try{
     if(file)uploaded=await uploadSubmissionImage(file);
     else if(imageUrl){const parsed=new URL(imageUrl);if(!['http:','https:'].includes(parsed.protocol))throw new Error('图片 URL 必须以 http 或 https 开头');uploaded={url:parsed.href};}
-    const priceType=$('submissionPriceType').value,price=priceType==='negotiable'?0:Number($('submissionPrice').value);
+    const priceType=$('submissionPriceType').value,price=Number($('submissionPrice').value||0);
     if(!Number.isFinite(price)||price<0)throw new Error('请输入正确的价格');
     const payload={p_title:$('submissionProductTitle').value.trim(),p_description:$('submissionDescription').value.trim(),p_price:price,p_price_type:priceType,p_condition:$('submissionCondition').value,p_category_id:Number($('submissionCategory').value),p_quantity:Number($('submissionQuantity').value),p_seller_contact:$('submissionContact').value.trim(),p_image_url:uploaded?.url||null,p_client_id:browserClientId()};
     const {error}=await state.client.rpc('submit_product_submission',payload);if(error)throw error;
@@ -688,7 +694,7 @@ async function submitProduct(event) {
       uploaded={url:parsed.href,path:null,size:0,external:true};
     }
     const priceType=$('productPriceType').value;
-    const price=priceType==='negotiable'?0:Number($('productPrice').value);
+    const price=Number($('productPrice').value||0);
     if(!Number.isFinite(price)||price<0)throw new Error('请输入正确的价格');
     const payload = {
       title:$('productTitle').value.trim(),description:$('productDescription').value.trim(),price,price_type:priceType,
@@ -878,20 +884,24 @@ function subscribePresence() {
 function updateProductPriceInput() {
   const mode=$('productPriceType').value;
   const input=$('productPrice');
-  input.disabled=mode==='negotiable';
+  input.disabled=false;
   input.required=mode!=='negotiable';
-  $('productPriceLabel').textContent=mode==='at_most'?'最高价格（元）':mode==='negotiable'?'价格（面议）':'价格（元）';
+  input.placeholder=mode==='negotiable'?'可填写大致价格，用于价格排序':'';
+  $('productPriceLabel').textContent=mode==='at_most'?'最高价格（元）':mode==='negotiable'?'大致价格（可选）':'价格（元）';
 }
 
 function bindEvents() {
   $('themeButton').addEventListener('click',() => applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
   $('homeLink').addEventListener('click',resetHome);
+  $('recommendedProductsButton').addEventListener('click',()=>setListMode('recommended'));
+  $('latestProductsButton').addEventListener('click',()=>setListMode('latest'));
   $('adminButton').addEventListener('click',() => { $('adminLoginError').textContent=''; $('adminLoginForm').reset(); openModal('adminLoginModal'); });
   $('adminChip').addEventListener('click',() => $('adminSession').classList.toggle('open'));
   $('openAdminPanel').addEventListener('click',openAdminPanel);
   $('logoutButton').addEventListener('click',logoutAdmin);
   $('adminLoginForm').addEventListener('submit',submitAdminLogin);
   $('reserveForm').addEventListener('submit',submitReservation);
+  $('buyerContact').addEventListener('input',event=>{event.target.value=event.target.value.replace(/[^A-Za-z0-9._-]/g,'');});
   $('reserveSummary').addEventListener('click',event => {const image=event.target.closest('[data-full-image]');if(image)openImageLightbox(image.dataset.fullImage,image.alt);});
   $('copyConnectionCode').addEventListener('click',copyConnectionCode);
   $('productForm').addEventListener('submit',submitProduct);
