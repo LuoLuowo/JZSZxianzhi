@@ -82,6 +82,7 @@ create table public.site_settings (
   hero_subtitle text not null default '校内二手闲置交换，教材、数码、生活好物，轻松找到下一位主人。' check (char_length(hero_subtitle) <= 500),
   introduction_content text not null default '' check (char_length(introduction_content) <= 5000),
   introduction_image_url text,
+  wall_review_enabled boolean not null default true,
   updated_at timestamptz not null default now()
 );
 
@@ -413,14 +414,21 @@ set search_path = public, pg_temp
 as $$
 declare v_post_id uuid;
 declare v_nickname text;
+declare v_review_enabled boolean;
+declare v_filter_text text;
 begin
   if p_client_id is null then raise exception '浏览器标识缺失，请刷新页面后重试'; end if;
   v_nickname := coalesce(nullif(btrim(p_nickname),''),'匿名');
   if char_length(v_nickname) > 12 then raise exception '昵称最多 12 个文字'; end if;
   if nullif(btrim(p_title),'') is null or char_length(btrim(p_title)) > 80 then raise exception '标题应为 1 至 80 个文字'; end if;
   if nullif(btrim(p_content),'') is null or char_length(btrim(p_content)) > 3000 then raise exception '内容应为 1 至 3000 个文字'; end if;
-  insert into public.campus_wall_posts(nickname,title,content,image_url,client_id)
-  values(v_nickname,btrim(p_title),btrim(p_content),nullif(btrim(p_image_url),''),p_client_id)
+  v_filter_text := lower(regexp_replace(coalesce(p_title,'') || coalesce(p_content,''),'[[:space:][:punct:]]','','g'));
+  if v_filter_text ~ '(傻逼|傻b|煞笔|沙币|草泥马|操你妈|艹你妈|妈的|cnm|nmsl|去死|垃圾人|狗东西|死全家|诈骗|刷单|网赌|赌博|博彩|毒品|卖淫|色情|裸聊|高利贷|办证|代开发票|枪支|炸药|fuck|shit|bitch)' then
+    raise exception '投稿内容包含不适宜发布的词汇，请修改后再提交';
+  end if;
+  select wall_review_enabled into v_review_enabled from public.site_settings where id=true;
+  insert into public.campus_wall_posts(nickname,title,content,image_url,client_id,status,reviewed_at)
+  values(v_nickname,btrim(p_title),btrim(p_content),nullif(btrim(p_image_url),''),p_client_id,case when coalesce(v_review_enabled,true) then 'pending' else 'approved' end,case when coalesce(v_review_enabled,true) then null else now() end)
   returning id into v_post_id;
   return v_post_id;
 end;
@@ -452,8 +460,9 @@ security definer
 set search_path = public, pg_temp
 as $$
 begin
+  if new.status <> 'pending' then return new; end if;
   insert into public.admin_notifications(kind,reference_id,title,body)
-  values('campus_wall',new.id,'有新的校园墙投稿',new.nickname || ' · ' || new.title);
+  values('campus_wall',new.id,'有新的投稿区内容',new.nickname || ' · ' || new.title);
   return new;
 end;
 $$;
@@ -695,7 +704,7 @@ group by p.id,c.id;
 -- 仅公开前台展示设置，不暴露后台备用交换微信。
 create view public.public_site_settings
 with (security_invoker = false)
-as select id,announcement,hero_headline,hero_subtitle,introduction_content,introduction_image_url,updated_at from public.site_settings where id=true;
+as select id,announcement,hero_headline,hero_subtitle,introduction_content,introduction_image_url,wall_review_enabled,updated_at from public.site_settings where id=true;
 
 create view public.public_campus_wall_posts
 with (security_invoker = false)

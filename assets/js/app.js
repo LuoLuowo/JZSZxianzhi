@@ -29,7 +29,7 @@ const state = {
   editingProduct: null,
   editingCategory: null,
   pendingConfirm: null,
-  publicSettings: {announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},
+  publicSettings: {announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:'',wall_review_enabled:true},
   channel: null,
   presenceChannel: null,
   productRequestId: 0
@@ -46,11 +46,17 @@ function escapeHtml(value='') {
 // 投稿区没有上传头像时，用昵称稳定生成一枚卡通头像；同一昵称每次看到的头像一致。
 const WALL_AVATARS = ['🐼','🐰','🦊','🐱','🐻','🐸','🐶','🐯','🐨','🦁'];
 const WALL_AVATAR_COLORS = ['#dceefc','#ffe5d5','#e7defd','#d8f3eb','#fff0c7','#dfeaff','#fde0e9','#e2f0cf','#f5e0fa','#dcebe7'];
+const WALL_BLOCKED_WORDS = /(傻逼|傻b|煞笔|沙币|草泥马|操你妈|艹你妈|妈的|cnm|nmsl|去死|垃圾人|狗东西|死全家|诈骗|刷单|网赌|赌博|博彩|毒品|卖淫|色情|裸聊|高利贷|办证|代开发票|枪支|炸药|fuck|shit|bitch)/i;
 function wallAvatar(nickname='') {
   let hash=0;
   for(const char of String(nickname)) hash=(hash*31+char.codePointAt(0))>>>0;
   const index=hash%WALL_AVATARS.length;
   return `<span class="wall-avatar-face" style="background:${WALL_AVATAR_COLORS[index]}">${WALL_AVATARS[index]}</span>`;
+}
+
+function hasBlockedWallContent(...values) {
+  const text=values.join('').replace(/[\s\p{P}\p{S}]/gu,'').toLowerCase();
+  return WALL_BLOCKED_WORDS.test(text);
 }
 
 function money(value) {
@@ -261,12 +267,13 @@ function cacheHomeProducts() {
 async function loadPublicSettings() {
   const {data,error}=await state.client.from('public_site_settings').select('*').eq('id',true).maybeSingle();
   if (error) throw error;
-  state.publicSettings=data || {announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''};
+  state.publicSettings={announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:'',wall_review_enabled:true,...(data||{})};
   const announcement=state.publicSettings.announcement?.trim();
   $('heroHeadline').textContent=state.publicSettings.hero_headline?.trim() || '发现校园好物';
   requestAnimationFrame(fitHeroHeadline);
   $('heroSubtitle').textContent=state.publicSettings.hero_subtitle?.trim() || '校内二手闲置交换，教材、数码、生活好物，轻松找到下一位主人。';
   renderAnnouncement(announcement);
+  updateWallSubmissionMode();
 }
 
 function renderAnnouncement(announcement) {
@@ -470,7 +477,17 @@ function renderWallPagination() {
   $('wallPagination').hidden=false;
 }
 
-function openWallSubmissionForm(){if(!requireBackend())return;$('wallSubmissionForm').reset();$('wallSubmissionError').textContent='';$('wallImageHint').textContent='只能添加一张照片，上传前会自动压缩为 WebP。';openModal('wallSubmissionModal');}
+function wallReviewEnabled(){return state.publicSettings.wall_review_enabled!==false;}
+function updateWallSubmissionMode(){
+  const review=wallReviewEnabled();
+  const warning=$('wallSubmissionWarning'),submit=$('wallSubmissionSubmit'),resultText=$('wallSubmissionResultText'),resultHint=$('wallSubmissionResultHint');
+  if(!warning||!submit||!resultText||!resultHint)return;
+  warning.textContent=review?'⚠️ 为防止骗子及违规内容，投稿需要审核通过后展示。':'⚠️ 请文明投稿，违规、辱骂和诈骗引流内容会被拦截。';
+  submit.textContent=review?'提交审核':'立即发布';
+  resultText.textContent=review?'投稿成功，审核员近期审核速度 6 分钟以内。':'投稿已成功发布到投稿区。';
+  resultHint.textContent=review?'注意：为防止骗子等内容，需要审核通过后才会展示。':'注意：违规内容会被删除，严重情况将限制投稿。';
+}
+function openWallSubmissionForm(){if(!requireBackend())return;$('wallSubmissionForm').reset();$('wallSubmissionError').textContent='';$('wallImageHint').textContent='只能添加一张照片，上传前会自动压缩为 WebP。';updateWallSubmissionMode();openModal('wallSubmissionModal');}
 
 async function uploadWallImage(file){
   if(!file?.type.startsWith('image/'))throw new Error('请选择图片文件');
@@ -487,10 +504,13 @@ async function submitWallPost(event){
   const button=$('wallSubmissionSubmit'),file=$('wallImage').files[0];let uploaded=null;
   $('wallSubmissionError').textContent='';busy(button,true,file?'处理照片中…':'提交中…');
   try{
+    if(hasBlockedWallContent($('wallTitle').value,$('wallContent').value))throw new Error('投稿内容包含不适宜发布的词汇，请修改后再提交');
     if(file)uploaded=await uploadWallImage(file);
     const {error}=await state.client.rpc('submit_campus_wall_post',{p_nickname:$('wallNickname').value.trim(),p_title:$('wallTitle').value.trim(),p_content:$('wallContent').value.trim(),p_image_url:uploaded?.url||null,p_client_id:browserClientId()});
     if(error)throw error;
-    closeModal('wallSubmissionModal');openModal('wallSubmissionResultModal');
+    closeModal('wallSubmissionModal');
+    if(!wallReviewEnabled()){state.wallLoaded=false;if(state.homeView==='wall')await loadWallPosts();}
+    openModal('wallSubmissionResultModal');
   }catch(error){if(uploaded?.path)await state.client.storage.from('product-images').remove([uploaded.path]);$('wallSubmissionError').textContent=friendlyError(error);}
   finally{busy(button,false);}
 }
