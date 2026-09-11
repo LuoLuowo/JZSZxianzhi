@@ -578,15 +578,11 @@ function setSharePoster(product,blob,token) {
   state.sharePosterUrl=URL.createObjectURL(blob);
   $('sharePosterImage').src=state.sharePosterUrl;
   $('sharePosterTitle').textContent=`分享：${product.title}`;
-  $('shareProductButton').disabled=false;
-  $('shareProductButton').textContent='分享商品';
 }
 
 async function prepareSharePoster(product) {
   const token=++state.sharePrepareToken;
   state.sharePosterBlob=null;
-  $('shareProductButton').disabled=true;
-  $('shareProductButton').textContent='海报准备中…';
   try{
     const qrDataUrl=await ensureProductQrCode(product);
     const fallbackPoster=await buildSharePoster(product,qrDataUrl);
@@ -598,9 +594,7 @@ async function prepareSharePoster(product) {
       cover.dispose(cover.image);
       setSharePoster(product,imagePoster,token);
     }catch{}
-  }catch{
-    if(token===state.sharePrepareToken){$('shareProductButton').disabled=true;$('shareProductButton').textContent='海报暂不可用';}
-  }
+  }catch{}
 }
 
 function openSharePoster() {
@@ -609,14 +603,19 @@ function openSharePoster() {
 }
 
 async function shareProductDirectly() {
-  if(!state.sharePosterBlob||!state.reserveProduct)return;
-  const file=new File([state.sharePosterBlob],posterFileName(),{type:'image/jpeg'});
-  if(navigator.share&&navigator.canShare?.({files:[file]})){
-    try{await navigator.share({title:state.reserveProduct.title,text:'焦专好物平台发现一个校园闲置好物',files:[file]});}
-    catch(error){if(error?.name!=='AbortError')openSharePoster();}
-    return;
+  if(!state.reserveProduct)return;
+  const product=state.reserveProduct;
+  const shareData={title:product.title,text:'焦专好物平台发现一个校园闲置好物，点击查看详情。',url:productShareUrl(product.id)};
+  if(state.sharePosterBlob){
+    const file=new File([state.sharePosterBlob],posterFileName(),{type:'image/jpeg'});
+    if(navigator.canShare?.({files:[file]}))shareData.files=[file];
   }
-  openSharePoster();
+  if(navigator.share){
+    try{await navigator.share(shareData);return;}
+    catch(error){if(error?.name==='AbortError')return;}
+  }
+  try{await navigator.clipboard.writeText(shareData.url);toast('商品链接已复制，可直接粘贴发送给微信好友');}
+  catch{toast('当前浏览器不支持直接分享，请使用浏览器分享菜单',false);}
 }
 
 function posterFileName() {
