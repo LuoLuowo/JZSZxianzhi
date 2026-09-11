@@ -3,7 +3,7 @@ const SUPABASE_URL = 'https://znrnaeebnuadbxyqaild.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable__uNRNeHvjKIMfIIdhQod6Q_KVqpmE3F';
 const db = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 const $ = id => document.getElementById(id);
-const state = {user:null,view:'overview',search:'',products:[],submissions:[],reservations:[],codes:[],hotSearches:[],hotSearchError:null,admins:[],settings:{admin_wechat:'',announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},resources:{},confirmAction:null,editingProduct:null,channel:null,presenceChannel:null,onlineCount:0};
+const state = {user:null,view:'overview',search:'',products:[],submissions:[],reservations:[],notifications:[],codes:[],hotSearches:[],hotSearchError:null,admins:[],settings:{admin_wechat:'',announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},resources:{},confirmAction:null,editingProduct:null,channel:null,presenceChannel:null,onlineCount:0};
 const viewMeta = {
   overview:['数据概览','查看平台实时运营数据'],products:['商品管理','查询商品、库存、卖家微信和商品码'],submissions:['发布审核','审核普通用户提交的闲置'],
   reservations:['想要记录','查询买家联系方式并处理成交'],codes:['对接码查询','查询当前和历史商品码'],
@@ -61,7 +61,7 @@ async function verifySession(session) {
 async function showDashboard() {
   $('loginView').hidden=true; $('adminShell').hidden=false;
   $('adminAccount').textContent=state.user.email;
-  await refreshData(); subscribeRealtime(); subscribePresence();
+  updateDesktopNotificationButton(); await refreshData(); subscribeRealtime(); subscribePresence();
 }
 
 async function login(event) {
@@ -81,6 +81,7 @@ async function refreshData() {
     db.from('products').select('*,categories(id,name,icon)').order('is_pinned',{ascending:false}).order('created_at',{ascending:false}),
     db.from('product_submissions').select('*,categories(id,name,icon)').order('created_at',{ascending:false}),
     db.from('reservations').select('*,products(id,title,connection_code)').neq('status','cancelled').order('created_at',{ascending:false}),
+    db.from('admin_notifications').select('*').order('created_at',{ascending:false}).limit(200),
     db.from('product_code_registry').select('*').order('issued_at',{ascending:false}),
     db.from('categories').select('*').order('sort_order').order('id'),
     db.rpc('admin_list_admins'),
@@ -88,14 +89,15 @@ async function refreshData() {
     db.rpc('admin_resource_usage'),
     db.from('hot_searches').select('*').order('sort_order').order('id')
   ]);
-  const failed=results.slice(0,8).find(result=>result.error);
+  const failed=results.slice(0,9).find(result=>result.error);
   if (failed) { $('adminPageContent').innerHTML=`<div class="empty show"><div class="empty-icon">!</div><div class="empty-title">后台数据加载失败</div><div>${esc(errorText(failed.error))}</div></div>`; return; }
-  [state.products,state.submissions,state.reservations,state.codes,state.categories,state.admins]=results.slice(0,6).map(result=>result.data||[]);
-  state.settings=results[6].data || {admin_wechat:'',announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''};
-  state.resources=results[7].data || {};
-  state.hotSearches=results[8].data || [];
-  state.hotSearchError=results[8].error || null;
+  [state.products,state.submissions,state.reservations,state.notifications,state.codes,state.categories,state.admins]=results.slice(0,7).map(result=>result.data||[]);
+  state.settings=results[7].data || {admin_wechat:'',announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''};
+  state.resources=results[8].data || {};
+  state.hotSearches=results[9].data || [];
+  state.hotSearchError=results[9].error || null;
   state.products.sort((a,b)=>Number(a.status==='sold')-Number(b.status==='sold'));
+  renderUnreadBadges();
   render();
 }
 
@@ -105,7 +107,16 @@ function setView(view) {
   $('viewTitle').textContent=viewMeta[view][0]; $('viewDescription').textContent=viewMeta[view][1];
   const hints={overview:'概览无需查询',products:'商品名、商品码、校区、卖家微信',submissions:'商品名、卖家微信、分类或审核状态',reservations:'商品、商品码、买家、联系方式',codes:'输入五位对接码或商品名',resources:'图片标题或 URL',categories:'分类名称',hotSearches:'热搜关键词',admins:'管理员邮箱或昵称'};
   $('adminSearch').placeholder=hints[view]; $('adminSearch').disabled=view==='overview'; $('adminSearchButton').disabled=view==='overview'; render();
+  if(view==='submissions')void markNotificationsRead('submission');
+  if(view==='reservations')void markNotificationsRead('reservation');
 }
+
+function renderUnreadBadges(){for(const [kind,id] of [['submission','unreadSubmissionsBadge'],['reservation','unreadReservationsBadge']]){const badge=$(id);const count=state.notifications.filter(item=>item.kind===kind&&!item.is_read).length;badge.hidden=!count;badge.textContent=count>99?'99+':String(count);}}
+async function markNotificationsRead(kind){const unread=state.notifications.filter(item=>item.kind===kind&&!item.is_read);if(!unread.length)return;const ids=unread.map(item=>item.id);const now=new Date().toISOString();const {error}=await db.from('admin_notifications').update({is_read:true,read_at:now}).in('id',ids);if(error)return;state.notifications=state.notifications.map(item=>ids.includes(item.id)?{...item,is_read:true,read_at:now}:item);renderUnreadBadges();}
+function updateDesktopNotificationButton(){const button=$('desktopNotificationButton');if(!('Notification'in window)){button.hidden=true;return;}button.hidden=false;button.textContent=Notification.permission==='granted'?'🔔 电脑通知已开启':'🔔 开启电脑通知';}
+async function requestDesktopNotifications(){if(!('Notification'in window))return toast('当前浏览器不支持电脑通知',false);if(Notification.permission==='denied')return toast('浏览器已拒绝通知，请在地址栏的网站权限中改为允许',false);const permission=await Notification.requestPermission();updateDesktopNotificationButton();toast(permission==='granted'?'电脑通知已开启':'未获得通知权限',permission==='granted');}
+function showDesktopNotification(item){if(!('Notification'in window)||Notification.permission!=='granted')return;try{const notification=new Notification(`焦专好物平台 · ${item.title}`,{body:item.body||'请进入后台查看',icon:'assets/images/site-mark.png',tag:`admin-notification-${item.id}`});notification.onclick=()=>{window.focus();setView(item.kind==='submission'?'submissions':'reservations');notification.close();};}catch{}}
+function handleNotificationChange(payload){if(payload.eventType!=='INSERT')return;const item=payload.new;if(!state.notifications.some(notification=>notification.id===item.id))state.notifications.unshift(item);renderUnreadBadges();showDesktopNotification(item);if((item.kind==='submission'&&state.view==='submissions')||(item.kind==='reservation'&&state.view==='reservations'))void markNotificationsRead(item.kind);}
 
 function render() {
   if (state.view==='overview') return renderOverview();
@@ -297,6 +308,7 @@ async function deleteRejectedSubmission(id) {const submission=state.submissions.
 
 function bindEvents() {
   $('adminPageLoginForm').addEventListener('submit',login); $('adminPageLogout').addEventListener('click',logout);
+  $('desktopNotificationButton').addEventListener('click',requestDesktopNotifications);
   $('adminThemeButton').addEventListener('click',()=>{const theme=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=theme;localStorage.setItem('jzsf-admin-theme',theme);$('adminThemeButton').textContent=theme==='dark'?'☀️':'🌙';});
   document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>setView(button.dataset.view)));
   $('adminSearchButton').addEventListener('click',()=>{state.search=$('adminSearch').value;render();});
@@ -328,7 +340,7 @@ function bindEvents() {
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&$('adminProductModal').classList.contains('open'))closeProductEditor();});
 }
 
-function subscribeRealtime() { if(state.channel)return;state.channel=db.channel('admin-dashboard').on('postgres_changes',{event:'*',schema:'public',table:'products'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'product_submissions'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'reservations'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'categories'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'hot_searches'},refreshData).subscribe(); }
+function subscribeRealtime() { if(state.channel)return;state.channel=db.channel('admin-dashboard').on('postgres_changes',{event:'*',schema:'public',table:'products'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'product_submissions'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'reservations'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'admin_notifications'},handleNotificationChange).on('postgres_changes',{event:'*',schema:'public',table:'categories'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'hot_searches'},refreshData).subscribe(); }
 function subscribePresence(){if(state.presenceChannel)return;state.presenceChannel=db.channel('site-online',{config:{presence:{key:browserClientId()}}}).on('presence',{event:'sync'},()=>{state.onlineCount=Object.keys(state.presenceChannel.presenceState()).length;if(state.view==='overview'&&!$('adminShell').hidden)renderOverview();}).subscribe(status=>{if(status==='SUBSCRIBED')state.presenceChannel.track({online_at:new Date().toISOString()});});}
 function updateEditProductPriceInput(){const mode=$('editProductPriceType').value;const input=$('editProductPrice');input.disabled=mode==='negotiable';input.required=mode!=='negotiable';$('editProductPriceLabel').textContent=mode==='at_most'?'最高价格（元）':mode==='negotiable'?'价格（面议）':'价格（元）';}
 
