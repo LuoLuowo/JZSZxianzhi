@@ -54,7 +54,7 @@
             <div class="field-row"><div class="field-group"><label class="label" id="submissionPriceLabel" for="submissionPrice">价格（元）</label><input class="field" id="submissionPrice" type="number" min="0" max="99999999" step="0.01" required></div><div class="field-group"><label class="label" for="submissionCondition">成色</label><select class="field" id="submissionCondition" required><option value="">请选择</option><option>全新</option><option>几乎全新</option><option>轻微使用痕迹</option><option>明显使用痕迹</option></select></div></div>
             <div class="field-group"><label class="label" for="submissionCategory">分类</label><select class="field" id="submissionCategory" required></select></div>
             <div class="field-group"><label class="label" for="submissionQuantity">商品数量</label><input class="field" id="submissionQuantity" type="number" min="1" max="9999" value="1" required></div>
-            <div class="field-group"><label class="label" for="submissionContact">卖家微信</label><input class="field" id="submissionContact" maxlength="120" required pattern="[A-Za-z0-9._-]+" title="仅支持英文字母、数字和 . _ - 符号" autocapitalize="off" spellcheck="false" placeholder="仅支持字母、数字和 . _ - 符号"></div>
+            <div class="field-group"><label class="label" for="submissionContact">交换微信</label><input class="field" id="submissionContact" maxlength="120" required pattern="[A-Za-z0-9._-]+" title="仅支持英文字母、数字和 . _ - 符号" autocapitalize="off" spellcheck="false" placeholder="请填写正确的交换微信才能审核通过"></div>
             <div class="field-group"><label class="label" for="submissionImageUrl">图片 URL（可选）</label><input class="field" id="submissionImageUrl" type="url" placeholder="https://example.com/image.jpg"></div>
             <div class="field-group"><label class="label" for="submissionImage">上传图片（可选）</label><input class="field" id="submissionImage" type="file" accept="image/*"><div class="hint" id="submissionImageHint">本地图片会压缩为 WebP，目标大小约 120KB 以内。</div></div>
             <div class="error" id="submissionError"></div><button class="submit" id="submissionSubmit" type="submit">提交管理员审核</button>
@@ -66,23 +66,37 @@
 
   <div class="modal-backdrop" id="connectionModal">
     <section class="modal" role="dialog" aria-modal="true" aria-labelledby="connectionTitle">
-      <div class="modal-head"><h3 class="modal-title" id="connectionTitle">想要已登记</h3><button class="close-btn" data-close="connectionModal">×</button></div>
-      <div class="modal-body"><p class="connection-tip">添加卖方管理微信发送对接码沟通交易！</p><div class="connection-info"><div><span>对接码</span><strong id="connectionCode">00000</strong></div><button class="btn btn-primary" id="copyConnectionCode" type="button">点击复制</button></div><div class="connection-admin">卖方管理微信：<strong id="adminWechatText">暂未设置</strong></div></div>
+      <div class="modal-head"><h3 class="modal-title" id="connectionTitle">交换微信</h3><button class="close-btn" data-close="connectionModal">×</button></div>
+      <div class="modal-body"><p class="connection-tip">您的交换意向已登记，请添加对方微信沟通。</p><div class="connection-info"><div><span>对方交换微信</span><strong id="exchangeWechat">暂未填写</strong></div><button class="btn btn-primary" id="copyExchangeWechat" type="button">复制微信</button></div><p class="trade-warning">⚠️ 微信交易请谨慎，本平台不承担任何责任。</p></div>
     </section>
   </div>
 
   <nav class="categories" aria-label="闲置分类"><div class="category-list" id="categoryList"><button class="category-tag active" data-category="all">全部</button></div><button class="category-scroll-hint" id="categoryScrollHint" type="button" aria-label="查看更多分类" title="查看更多分类">›</button></nav>
   <main class="main">
-    <div class="section-head"><div class="listing-tabs" role="tablist" aria-label="闲置列表"><button class="listing-tab" id="recommendedProductsButton" type="button" role="tab" aria-selected="false">⭐ 推荐闲置</button><button class="listing-tab active" id="latestProductsButton" type="button" role="tab" aria-selected="true">🕒 最新闲置</button></div><span class="result-count" id="resultCount">校园闲置好物</span></div>
-    <div class="filter-bar" aria-label="商品筛选与排序">
-      <div class="price-filter"><span class="filter-label">价格</span><input id="minPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="最低价"><span>—</span><input id="maxPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="最高价"><button class="btn btn-primary btn-small" id="applyPriceFilter" type="button">筛选</button><button class="btn btn-ghost btn-small" id="clearPriceFilter" type="button">清除全部</button></div>
-      <div class="sort-filter" id="sortFilter"><span class="filter-label">排序</span><div class="custom-select"><button class="sort-trigger" id="sortToggle" type="button" aria-haspopup="listbox" aria-expanded="false"><span id="sortLabel">最新发布</span><span class="sort-arrow">⌄</span></button><ul class="sort-menu" id="sortMenu" role="listbox" hidden><li><button class="sort-option active" type="button" data-sort="newest" role="option" aria-selected="true">最新发布</button></li><li><button class="sort-option" type="button" data-sort="price_asc" role="option">价格从低到高</button></li><li><button class="sort-option" type="button" data-sort="price_desc" role="option">价格从高到低</button></li></ul></div></div>
-    </div>
-    <div class="loading" id="loading" aria-live="polite"></div>
-    <div class="product-grid" id="productGrid"></div>
-    <div class="empty" id="emptyState"><div class="empty-icon" id="emptyIcon">🔍</div><div class="empty-title" id="emptyTitle">没有找到相关闲置</div><div id="emptyText">换个关键词或分类试试吧</div></div>
-    <nav class="pagination" id="pagination" aria-label="商品分页" hidden></nav>
+    <div class="section-head"><div class="listing-tabs" role="tablist" aria-label="内容列表"><button class="listing-tab" id="recommendedProductsButton" type="button" role="tab" aria-selected="false">⭐ 推荐闲置</button><button class="listing-tab active" id="latestProductsButton" type="button" role="tab" aria-selected="true">🕒 最新闲置</button><button class="listing-tab" id="campusWallButton" type="button" role="tab" aria-selected="false">💬 校园墙</button></div><span class="result-count" id="resultCount">校园闲置好物</span></div>
+    <section id="productListView">
+      <div class="filter-bar" aria-label="商品筛选与排序">
+        <div class="price-filter"><span class="filter-label">价格</span><input id="minPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="最低价"><span>—</span><input id="maxPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="最高价"><button class="btn btn-primary btn-small" id="applyPriceFilter" type="button">筛选</button><button class="btn btn-ghost btn-small" id="clearPriceFilter" type="button">清除全部</button></div>
+        <div class="sort-filter" id="sortFilter"><span class="filter-label">排序</span><div class="custom-select"><button class="sort-trigger" id="sortToggle" type="button" aria-haspopup="listbox" aria-expanded="false"><span id="sortLabel">最新发布</span><span class="sort-arrow">⌄</span></button><ul class="sort-menu" id="sortMenu" role="listbox" hidden><li><button class="sort-option active" type="button" data-sort="newest" role="option" aria-selected="true">最新发布</button></li><li><button class="sort-option" type="button" data-sort="price_asc" role="option">价格从低到高</button></li><li><button class="sort-option" type="button" data-sort="price_desc" role="option">价格从高到低</button></li></ul></div></div>
+      </div>
+      <div class="loading" id="loading" aria-live="polite"></div>
+      <div class="product-grid" id="productGrid"></div>
+      <div class="empty" id="emptyState"><div class="empty-icon" id="emptyIcon">🔍</div><div class="empty-title" id="emptyTitle">没有找到相关闲置</div><div id="emptyText">换个关键词或分类试试吧</div></div>
+      <nav class="pagination" id="pagination" aria-label="商品分页" hidden></nav>
+    </section>
+    <section class="campus-wall-view" id="campusWallView" hidden>
+      <div class="campus-wall-notice"><strong>这里是焦大师专校园墙</strong><span>随心投稿任何校内事情，最多可以添加一张照片。</span></div>
+      <div class="campus-wall-toolbar"><span>分享校园新鲜事、失物招领、学习互助和日常见闻。</span><button class="btn btn-primary" id="openWallSubmission" type="button">＋ 投稿</button></div>
+      <div class="wall-feed" id="wallFeed"></div>
+      <div class="loading" id="wallLoading">正在获取校园墙内容…</div>
+      <div class="empty" id="wallEmpty"><div class="empty-icon">💬</div><div class="empty-title">校园墙暂时还没有内容</div><div>来发布第一条校园动态吧</div></div>
+      <nav class="pagination" id="wallPagination" aria-label="校园墙分页" hidden></nav>
+    </section>
+    <p class="global-trade-warning">⚠️ 所有交易请谨防被骗，本平台不承担任何责任。</p>
   </main>
+
+  <div class="modal-backdrop" id="wallSubmissionModal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="wallSubmissionTitle"><div class="modal-head"><h3 class="modal-title" id="wallSubmissionTitle">校园墙投稿</h3><button class="close-btn" data-close="wallSubmissionModal">×</button></div><div class="modal-body"><div class="submission-warning">⚠️ 为防止骗子及违规内容，投稿需要审核通过后展示。</div><form id="wallSubmissionForm"><div class="field-group"><label class="label" for="wallNickname">昵称</label><input class="field" id="wallNickname" maxlength="12" required placeholder="最多12个文字"></div><div class="field-group"><label class="label" for="wallTitle">标题</label><input class="field" id="wallTitle" maxlength="80" required placeholder="一句话概括投稿内容"></div><div class="field-group"><label class="label" for="wallContent">内容</label><textarea class="field wall-content-input" id="wallContent" maxlength="3000" required placeholder="填写想分享的校内事情"></textarea></div><div class="field-group"><label class="label" for="wallImage">照片（可选，最多一张）</label><input class="field" id="wallImage" type="file" accept="image/*"><div class="hint" id="wallImageHint">只能添加一张照片，上传前会自动压缩为 WebP。</div></div><div class="error" id="wallSubmissionError"></div><button class="submit" id="wallSubmissionSubmit" type="submit">提交审核</button></form></div></section></div>
+  <div class="modal-backdrop" id="wallSubmissionResultModal"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><h3 class="modal-title">投稿成功</h3><button class="close-btn" data-close="wallSubmissionResultModal">×</button></div><div class="modal-body submission-result"><div class="empty-icon">✅</div><p>投稿成功，审核员近期审核速度 6 分钟以内。</p><p>注意：为防止骗子等内容，需要审核通过后才会展示。</p><button class="btn btn-primary" type="button" data-close="wallSubmissionResultModal">知道了</button></div></section></div>
 
   <div class="modal-backdrop" id="adminLoginModal">
     <section class="modal" role="dialog" aria-modal="true" aria-labelledby="adminLoginTitle">
@@ -105,7 +119,7 @@
       <div class="reserve-summary" id="reserveSummary"></div>
       <form id="reserveForm" autocomplete="off">
         <div class="field-group"><label class="label" for="buyerName">称呼您</label><input class="field" id="buyerName" maxlength="6" required autocomplete="off" placeholder="最多输入6个文字"></div>
-        <div class="field-group"><label class="label" for="buyerContact">您的微信号</label><input class="field" id="buyerContact" maxlength="120" required pattern="[A-Za-z0-9._-]+" title="仅支持英文字母、数字和 . _ - 符号" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="请输入您的交换微信号"></div>
+        <div class="field-group"><label class="label" for="buyerContact">您的交换微信</label><input class="field" id="buyerContact" maxlength="120" required pattern="[A-Za-z0-9._-]+" title="仅支持英文字母、数字和 . _ - 符号" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="请输入您的交换微信"></div>
         <div class="error" id="reserveError"></div><div class="reserve-actions"><button class="btn btn-ghost" id="cancelReserve" type="button">取消</button><button class="btn btn-primary" id="reserveSubmit" type="submit">提交想要</button></div>
       </form>
     </div>
@@ -135,7 +149,7 @@
           </div>
           <div class="field-group"><label class="label" for="productCategory">分类</label><select class="field" id="productCategory" required></select></div>
           <div class="field-group"><label class="label" for="productQuantity">商品数量</label><input class="field" id="productQuantity" type="number" min="1" max="9999" value="1" required></div>
-          <div class="field-group"><label class="label" for="sellerContact">卖家微信（可选，仅管理员查看）</label><input class="field" id="sellerContact" maxlength="120" pattern="[A-Za-z0-9._-]+" title="仅支持英文字母、数字和 . _ - 符号" autocapitalize="off" spellcheck="false" placeholder="仅支持字母、数字和 . _ - 符号"></div>
+          <div class="field-group"><label class="label" for="sellerContact">交换微信</label><input class="field" id="sellerContact" maxlength="120" required pattern="[A-Za-z0-9._-]+" title="仅支持英文字母、数字和 . _ - 符号" autocapitalize="off" spellcheck="false" placeholder="成交意向登记后将提供给对方"></div>
           <div class="field-group"><label class="label" for="productImageUrl">图片 URL（可选）</label><input class="field" id="productImageUrl" type="url" placeholder="https://example.com/image.jpg"><div class="hint">URL 将直接保存并作为商品图片显示，不下载、不转换。</div></div>
           <div class="field-group"><label class="label" for="productImage">上传图片（可选）</label><input class="field" id="productImage" type="file" accept="image/*"><div class="hint" id="imageHint">本地图片会压缩为 WebP，目标大小约 120KB 以内。</div></div>
           <div class="error" id="productError"></div><div class="form-submit-actions"><button class="btn btn-primary" id="productSubmitContinue" type="submit">保存并继续添加</button><button class="btn btn-ghost" id="productSubmit" type="submit">保存并关闭</button></div>

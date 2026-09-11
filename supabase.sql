@@ -8,6 +8,7 @@ create extension if not exists pgcrypto;
 drop view if exists public.product_feed cascade;
 drop view if exists public.public_profiles cascade;
 drop view if exists public.public_site_settings cascade;
+drop view if exists public.public_campus_wall_posts cascade;
 drop function if exists public.reserve_product(uuid, text, text) cascade;
 drop function if exists public.reserve_product(uuid, text, text, text) cascade;
 drop function if exists public.reserve_product(uuid, text, text, text, uuid) cascade;
@@ -29,12 +30,16 @@ drop function if exists public.submit_product_submission(text,text,numeric,text,
 drop function if exists public.validate_seller_contact() cascade;
 drop function if exists public.create_submission_notification() cascade;
 drop function if exists public.create_reservation_notification() cascade;
+drop function if exists public.submit_campus_wall_post(text,text,text,text,uuid) cascade;
+drop function if exists public.admin_review_campus_wall_post(uuid,text) cascade;
+drop function if exists public.create_campus_wall_notification() cascade;
 drop table if exists public.reservations cascade;
 drop table if exists public.reservation_rate_limits cascade;
 drop table if exists public.submission_rate_limits cascade;
 drop table if exists public.admin_notifications cascade;
 drop table if exists public.site_visitors cascade;
 drop table if exists public.product_submissions cascade;
+drop table if exists public.campus_wall_posts cascade;
 drop table if exists public.products cascade;
 drop table if exists public.hot_searches cascade;
 drop table if exists public.categories cascade;
@@ -80,7 +85,7 @@ create table public.site_settings (
   updated_at timestamptz not null default now()
 );
 
--- 对接码永久台账不关联商品外键，因此删除商品后编码仍永久保留。
+-- 商品码永久台账不关联商品外键，因此删除商品后编码仍永久保留。
 create table public.product_code_registry (
   code text primary key check (code ~ '^[0-9]{5}$'),
   product_id uuid not null unique,
@@ -144,7 +149,7 @@ begin
   end if;
   new.seller_contact := btrim(new.seller_contact);
   if new.seller_contact !~ '^[A-Za-z0-9._-]+$' then
-    raise exception '卖家微信仅支持英文字母、数字和 . _ - 符号';
+    raise exception '交换微信仅支持英文字母、数字和 . _ - 符号';
   end if;
   return new;
 end;
@@ -218,7 +223,7 @@ create table public.submission_rate_limits (
 
 create table public.admin_notifications (
   id uuid primary key default gen_random_uuid(),
-  kind text not null check (kind in ('submission','reservation')),
+  kind text not null check (kind in ('submission','reservation','campus_wall')),
   reference_id uuid not null,
   title text not null,
   body text not null default '',
@@ -233,6 +238,20 @@ create table public.site_visitors (
   first_seen_at timestamptz not null default now()
 );
 
+create table public.campus_wall_posts (
+  id uuid primary key default gen_random_uuid(),
+  nickname text not null check (char_length(nickname) between 1 and 12),
+  title text not null check (char_length(title) between 1 and 80),
+  content text not null check (char_length(content) between 1 and 3000),
+  image_url text,
+  status text not null default 'pending' check (status in ('pending','approved','rejected')),
+  is_pinned boolean not null default false,
+  client_id uuid not null,
+  reviewed_at timestamptz,
+  reviewed_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
 create index products_category_idx on public.products(category_id);
 create index products_created_idx on public.products(created_at desc);
 create index products_pinned_created_idx on public.products(is_pinned desc, created_at desc);
@@ -244,6 +263,7 @@ create index product_submissions_status_created_idx on public.product_submission
 create index submission_rate_limits_updated_idx on public.submission_rate_limits(updated_at);
 create index admin_notifications_unread_idx on public.admin_notifications(is_read,created_at desc);
 create index site_visitors_first_seen_idx on public.site_visitors(first_seen_at desc);
+create index campus_wall_posts_status_created_idx on public.campus_wall_posts(status,is_pinned desc,created_at desc);
 
 insert into public.site_settings(id,admin_wechat) values(true,'') on conflict (id) do nothing;
 
@@ -332,8 +352,8 @@ begin
   if p_price_type not in ('fixed','negotiable','at_most') then raise exception '无效价格方式'; end if;
   if p_condition not in ('全新','几乎全新','轻微使用痕迹','明显使用痕迹') then raise exception '请选择商品成色'; end if;
   if p_quantity is null or p_quantity not between 1 and 9999 then raise exception '商品数量应在 1 至 9999 之间'; end if;
-  if nullif(btrim(p_seller_contact),'') is null or char_length(btrim(p_seller_contact)) > 120 then raise exception '请填写卖家微信'; end if;
-  if btrim(p_seller_contact) !~ '^[A-Za-z0-9._-]+$' then raise exception '卖家微信仅支持英文字母、数字和 . _ - 符号'; end if;
+  if nullif(btrim(p_seller_contact),'') is null or char_length(btrim(p_seller_contact)) > 120 then raise exception '请填写交换微信'; end if;
+  if btrim(p_seller_contact) !~ '^[A-Za-z0-9._-]+$' then raise exception '交换微信仅支持英文字母、数字和 . _ - 符号'; end if;
   insert into public.submission_rate_limits(client_id) values(p_client_id) on conflict(client_id) do nothing;
   select window_started_at,submit_count into v_window_started_at,v_submit_count from public.submission_rate_limits where client_id=p_client_id for update;
   if v_window_started_at <= now()-interval '1 minute' then
@@ -383,6 +403,61 @@ for each row execute function public.create_submission_notification();
 create trigger reservations_create_notification after insert on public.reservations
 for each row execute function public.create_reservation_notification();
 
+create or replace function public.submit_campus_wall_post(
+  p_nickname text,p_title text,p_content text,p_image_url text default null,p_client_id uuid default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare v_post_id uuid;
+begin
+  if p_client_id is null then raise exception '浏览器标识缺失，请刷新页面后重试'; end if;
+  if nullif(btrim(p_nickname),'') is null or char_length(btrim(p_nickname)) > 12 then raise exception '昵称应为 1 至 12 个文字'; end if;
+  if nullif(btrim(p_title),'') is null or char_length(btrim(p_title)) > 80 then raise exception '标题应为 1 至 80 个文字'; end if;
+  if nullif(btrim(p_content),'') is null or char_length(btrim(p_content)) > 3000 then raise exception '内容应为 1 至 3000 个文字'; end if;
+  insert into public.campus_wall_posts(nickname,title,content,image_url,client_id)
+  values(btrim(p_nickname),btrim(p_title),btrim(p_content),nullif(btrim(p_image_url),''),p_client_id)
+  returning id into v_post_id;
+  return v_post_id;
+end;
+$$;
+revoke all on function public.submit_campus_wall_post(text,text,text,text,uuid) from public;
+grant execute on function public.submit_campus_wall_post(text,text,text,text,uuid) to anon,authenticated;
+
+create or replace function public.admin_review_campus_wall_post(p_post_id uuid,p_action text)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if not public.is_admin() then raise exception '无权限'; end if;
+  if p_action not in ('approved','rejected') then raise exception '无效审核操作'; end if;
+  update public.campus_wall_posts set status=p_action,is_pinned=case when p_action='approved' then is_pinned else false end,reviewed_at=now(),reviewed_by=auth.uid()
+  where id=p_post_id and status='pending';
+  if not found then raise exception '投稿不存在或已经审核'; end if;
+end;
+$$;
+revoke all on function public.admin_review_campus_wall_post(uuid,text) from public;
+grant execute on function public.admin_review_campus_wall_post(uuid,text) to authenticated;
+
+create or replace function public.create_campus_wall_notification()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  insert into public.admin_notifications(kind,reference_id,title,body)
+  values('campus_wall',new.id,'有新的校园墙投稿',new.nickname || ' · ' || new.title);
+  return new;
+end;
+$$;
+create trigger campus_wall_posts_create_notification after insert on public.campus_wall_posts
+for each row execute function public.create_campus_wall_notification();
+
 create or replace function public.admin_review_submission(p_submission_id uuid,p_action text)
 returns uuid
 language plpgsql
@@ -426,22 +501,22 @@ declare
   v_quantity integer;
   v_sold_quantity integer;
   v_reservation_id uuid;
-  v_connection_code text;
-  v_management_wechat text;
+  v_exchange_wechat text;
   v_window_started_at timestamptz;
   v_submit_count smallint;
 begin
   if p_client_id is null then raise exception '浏览器标识缺失，请刷新页面后重试'; end if;
   if nullif(btrim(p_buyer_name),'') is null then raise exception '请填写称呼'; end if;
   if char_length(btrim(p_buyer_name)) > 6 then raise exception '称呼最多输入 6 个文字'; end if;
-  if nullif(btrim(p_contact),'') is null then raise exception '请填写您的微信号'; end if;
-  if char_length(btrim(p_contact)) > 120 then raise exception '微信号过长'; end if;
-  if btrim(p_contact) !~ '^[A-Za-z0-9._-]+$' then raise exception '微信号仅支持英文字母、数字和 . _ - 符号'; end if;
+  if nullif(btrim(p_contact),'') is null then raise exception '请填写您的交换微信'; end if;
+  if char_length(btrim(p_contact)) > 120 then raise exception '交换微信过长'; end if;
+  if btrim(p_contact) !~ '^[A-Za-z0-9._-]+$' then raise exception '交换微信仅支持英文字母、数字和 . _ - 符号'; end if;
   if char_length(coalesce(p_note,'')) > 1000 then raise exception '备注过长'; end if;
 
-  select status,quantity,sold_quantity,connection_code into v_status,v_quantity,v_sold_quantity,v_connection_code from public.products where id = p_product_id for update;
+  select status,quantity,sold_quantity,seller_contact into v_status,v_quantity,v_sold_quantity,v_exchange_wechat from public.products where id = p_product_id for update;
   if not found then raise exception '商品不存在'; end if;
   if v_status <> 'available' or v_sold_quantity >= v_quantity then raise exception '该商品已售罄或不可购买'; end if;
+  if nullif(btrim(coalesce(v_exchange_wechat,'')),'') is null then raise exception '该商品暂未填写交换微信，请稍后再试'; end if;
 
   insert into public.reservation_rate_limits(client_id) values(p_client_id) on conflict(client_id) do nothing;
   select window_started_at,submit_count into v_window_started_at,v_submit_count from public.reservation_rate_limits where client_id=p_client_id for update;
@@ -457,8 +532,7 @@ begin
   values (p_product_id,btrim(p_buyer_name),btrim(p_contact),coalesce(btrim(p_note),''))
   returning id into v_reservation_id;
 
-  select admin_wechat into v_management_wechat from public.site_settings where id=true;
-  return jsonb_build_object('reservation_id',v_reservation_id,'connection_code',v_connection_code,'seller_wechat',coalesce(v_management_wechat,''));
+  return jsonb_build_object('reservation_id',v_reservation_id,'exchange_wechat',coalesce(v_exchange_wechat,''));
 end;
 $$;
 
@@ -527,6 +601,7 @@ alter table public.product_submissions enable row level security;
 alter table public.submission_rate_limits enable row level security;
 alter table public.admin_notifications enable row level security;
 alter table public.site_visitors enable row level security;
+alter table public.campus_wall_posts enable row level security;
 
 create policy profiles_admin_read on public.profiles for select to authenticated
   using ((select public.is_admin()) or id = (select auth.uid()));
@@ -589,7 +664,14 @@ create policy admin_notifications_admin_delete on public.admin_notifications for
 create policy site_visitors_admin_read on public.site_visitors for select to authenticated
   using ((select public.is_admin()));
 
--- 前台商品视图：隐藏管理员联系方式，并汇总“几人想要”和剩余数量。
+create policy campus_wall_posts_admin_read on public.campus_wall_posts for select to authenticated
+  using ((select public.is_admin()));
+create policy campus_wall_posts_admin_update on public.campus_wall_posts for update to authenticated
+  using ((select public.is_admin())) with check ((select public.is_admin()));
+create policy campus_wall_posts_admin_delete on public.campus_wall_posts for delete to authenticated
+  using ((select public.is_admin()));
+
+-- 前台商品视图：隐藏交换微信，并汇总想要人数、库存和永久商品码。
 create view public.product_feed
 with (security_invoker = false)
 as
@@ -600,26 +682,34 @@ select
   count(r.id) filter (where r.status in ('pending','confirmed'))::integer as wanted_count,
   p.created_at,
   c.name as category_name,c.icon as category_icon,
-  p.is_recommended
+  p.is_recommended,
+  p.connection_code
 from public.products p
 join public.categories c on c.id=p.category_id
 left join public.reservations r on r.product_id=p.id
 where p.status <> 'removed'
 group by p.id,c.id;
 
--- 仅公开公告和群二维码，不暴露其他后台设置。
+-- 仅公开前台展示设置，不暴露后台备用交换微信。
 create view public.public_site_settings
 with (security_invoker = false)
 as select id,announcement,hero_headline,hero_subtitle,introduction_content,introduction_image_url,updated_at from public.site_settings where id=true;
 
-revoke all on public.profiles,public.categories,public.hot_searches,public.site_settings,public.product_code_registry,public.products,public.reservations,public.product_submissions,public.submission_rate_limits,public.admin_notifications,public.site_visitors from anon,authenticated;
+create view public.public_campus_wall_posts
+with (security_invoker = false)
+as select id,nickname,title,content,image_url,is_pinned,created_at
+from public.campus_wall_posts where status='approved';
+
+revoke all on public.profiles,public.categories,public.hot_searches,public.site_settings,public.product_code_registry,public.products,public.reservations,public.product_submissions,public.submission_rate_limits,public.admin_notifications,public.site_visitors,public.campus_wall_posts from anon,authenticated;
 grant select on public.categories to anon,authenticated;
 grant select on public.hot_searches to anon,authenticated;
 grant select on public.product_feed to anon,authenticated;
 grant select on public.public_site_settings to anon,authenticated;
+grant select on public.public_campus_wall_posts to anon,authenticated;
 grant select on public.products to authenticated;
 grant select on public.profiles,public.reservations,public.site_settings,public.product_code_registry to authenticated;
 grant select on public.site_visitors to authenticated;
+grant select,update,delete on public.campus_wall_posts to authenticated;
 grant select,update,delete on public.product_submissions to authenticated;
 grant select,update,delete on public.admin_notifications to authenticated;
 grant insert,update,delete on public.categories,public.products to authenticated;
@@ -683,8 +773,8 @@ begin
   select count(*),coalesce(sum(case when coalesce(metadata->>'size','') ~ '^[0-9]+$' then (metadata->>'size')::bigint else 0 end),0)
   into v_storage_count,v_storage_bytes from storage.objects where bucket_id='product-images';
   select count(*) filter(where image_url is not null),count(*) filter(where image_url is not null and image_url not like '%/storage/v1/object/public/product-images/%')
-  into v_product_images,v_external_images from (select image_url from public.products union all select image_url from public.product_submissions) as images;
-  v_database_bytes := pg_total_relation_size('public.profiles'::regclass)+pg_total_relation_size('public.categories'::regclass)+pg_total_relation_size('public.hot_searches'::regclass)+pg_total_relation_size('public.products'::regclass)+pg_total_relation_size('public.product_submissions'::regclass)+pg_total_relation_size('public.submission_rate_limits'::regclass)+pg_total_relation_size('public.admin_notifications'::regclass)+pg_total_relation_size('public.site_visitors'::regclass)+pg_total_relation_size('public.reservations'::regclass)+pg_total_relation_size('public.product_code_registry'::regclass)+pg_total_relation_size('public.site_settings'::regclass);
+  into v_product_images,v_external_images from (select image_url from public.products union all select image_url from public.product_submissions union all select image_url from public.campus_wall_posts) as images;
+  v_database_bytes := pg_total_relation_size('public.profiles'::regclass)+pg_total_relation_size('public.categories'::regclass)+pg_total_relation_size('public.hot_searches'::regclass)+pg_total_relation_size('public.products'::regclass)+pg_total_relation_size('public.product_submissions'::regclass)+pg_total_relation_size('public.submission_rate_limits'::regclass)+pg_total_relation_size('public.admin_notifications'::regclass)+pg_total_relation_size('public.site_visitors'::regclass)+pg_total_relation_size('public.reservations'::regclass)+pg_total_relation_size('public.product_code_registry'::regclass)+pg_total_relation_size('public.site_settings'::regclass)+pg_total_relation_size('public.campus_wall_posts'::regclass);
   return jsonb_build_object('storage_image_count',v_storage_count,'storage_bytes',v_storage_bytes,'database_bytes',v_database_bytes,'total_bytes',v_storage_bytes+v_database_bytes,'product_image_count',v_product_images,'external_image_count',v_external_images,'measured_at',now());
 end;
 $$;
@@ -715,7 +805,7 @@ create policy product_images_admin_update on storage.objects for update to authe
 create policy product_images_admin_delete on storage.objects for delete to authenticated
   using (bucket_id='product-images' and (select public.is_admin()));
 create policy product_submission_images_public_insert on storage.objects for insert to anon,authenticated
-  with check (bucket_id='product-images' and (storage.foldername(name))[1]='submissions');
+  with check (bucket_id='product-images' and (storage.foldername(name))[1] in ('submissions','wall-submissions'));
 
 -- 9. 默认分类
 insert into public.categories(name,icon,sort_order) values
@@ -758,6 +848,9 @@ begin
   end if;
   if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='site_visitors') then
     alter publication supabase_realtime add table public.site_visitors;
+  end if;
+  if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='campus_wall_posts') then
+    alter publication supabase_realtime add table public.campus_wall_posts;
   end if;
 end $$;
 

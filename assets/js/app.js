@@ -1,7 +1,7 @@
 /* 焦大师专闲置好物平台 - 原生 JavaScript + Supabase */
 const SUPABASE_URL = 'https://znrnaeebnuadbxyqaild.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable__uNRNeHvjKIMfIIdhQod6Q_KVqpmE3F';
-const PRODUCT_CACHE_KEY = 'jzsf-home-products-v1';
+const PRODUCT_CACHE_KEY = 'jzsf-home-products-v2';
 
 const state = {
   client: null,
@@ -15,9 +15,15 @@ const state = {
   maxPrice: null,
   sort: 'newest',
   listMode: 'latest',
+  homeView: 'products',
   page: 1,
   pageSize: 24,
   totalProducts: 0,
+  wallPosts: [],
+  wallPage: 1,
+  wallPageSize: 10,
+  totalWallPosts: 0,
+  wallLoaded: false,
   reserveProduct: null,
   adminView: 'overview',
   editingProduct: null,
@@ -300,15 +306,18 @@ function openIntroduction() {
 function sanitizeIntroductionHtml(value) {
   const template=document.createElement('template');
   template.innerHTML=String(value||'');
-  const allowed=new Set(['STRONG','B','BR','DIV','P']);
+  const allowed=new Set(['STRONG','B','BR','DIV','P','SPAN','FONT']);
   const clean=node=>{
     if(node.nodeType===Node.TEXT_NODE)return document.createTextNode(node.textContent||'');
     if(node.nodeType!==Node.ELEMENT_NODE)return document.createDocumentFragment();
     const fragment=document.createDocumentFragment();
     for(const child of [...node.childNodes])fragment.append(clean(child));
     if(!allowed.has(node.tagName))return fragment;
-    const tag=node.tagName==='B'?'strong':node.tagName.toLowerCase();
+    const color=String(node.getAttribute?.('color')||node.style?.color||'').toLowerCase().replace(/\s/g,'');
+    if((node.tagName==='SPAN'||node.tagName==='FONT')&&!node.classList?.contains('intro-red')&&!['#e64b4b','rgb(230,75,75)','red'].includes(color))return fragment;
+    const tag=node.tagName==='B'?'strong':node.tagName==='FONT'?'span':node.tagName.toLowerCase();
     const element=document.createElement(tag);
+    if(node.tagName==='SPAN'||node.tagName==='FONT')element.className='intro-red';
     element.append(fragment);
     return element;
   };
@@ -376,7 +385,7 @@ async function loadProducts() {
 }
 
 function renderProducts() {
-  $('resultCount').textContent = `${state.listMode==='recommended'?'推荐 ':''}共 ${state.totalProducts} 件闲置`;
+  if(state.homeView==='products')$('resultCount').textContent = `${state.listMode==='recommended'?'推荐 ':''}共 ${state.totalProducts} 件闲置`;
   if (!state.products.length) {
     showEmpty(state.listMode==='recommended'?'⭐':'🔍',state.listMode==='recommended'?'暂无推荐闲置':'没有找到相关闲置',state.listMode==='recommended'?'管理员设置推荐商品后会显示在这里':'换个关键词或分类试试吧');
     return;
@@ -403,6 +412,71 @@ function renderPagination() {
   $('pagination').hidden=false;
 }
 
+async function loadWallPosts() {
+  if(!state.client)return;
+  $('wallLoading').classList.add('show');
+  $('wallEmpty').classList.remove('show');
+  $('wallEmpty').querySelector('.empty-title').textContent='校园墙暂时还没有内容';
+  $('wallEmpty').lastElementChild.textContent='来发布第一条校园动态吧';
+  const from=(state.wallPage-1)*state.wallPageSize;
+  const {data,error,count}=await state.client.from('public_campus_wall_posts').select('*',{count:'exact'}).order('is_pinned',{ascending:false}).order('created_at',{ascending:false}).range(from,from+state.wallPageSize-1);
+  $('wallLoading').classList.remove('show');
+  state.wallLoaded=!error;
+  if(error){
+    $('wallFeed').innerHTML='';
+    $('wallEmpty').classList.add('show');
+    $('wallEmpty').querySelector('.empty-title').textContent='校园墙暂未开放';
+    $('wallEmpty').lastElementChild.textContent=/public_campus_wall_posts|schema cache|relation/i.test(error.message)?'管理员需要先执行校园墙数据库升级 SQL。':friendlyError(error);
+    return;
+  }
+  state.wallPosts=data||[];
+  state.totalWallPosts=count||0;
+  renderWallPosts();
+  renderWallPagination();
+  renderHomeView();
+}
+
+function renderWallPosts() {
+  $('wallFeed').innerHTML=state.wallPosts.map(post=>`<article class="wall-post">
+    <div class="wall-post-author">${escapeHtml(post.nickname)}</div>
+    <div class="wall-post-main"><div class="wall-post-head">${post.is_pinned?'<span class="wall-pin">🔝 置顶</span>':''}<h3>${escapeHtml(post.title)}</h3></div><div class="wall-post-content">${escapeHtml(post.content)}</div>${post.image_url?`<img class="wall-post-image" src="${escapeHtml(post.image_url)}" alt="${escapeHtml(post.title)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">`:''}<time>${new Date(post.created_at).toLocaleString('zh-CN')}</time></div>
+  </article>`).join('');
+  $('wallEmpty').classList.toggle('show',!state.wallPosts.length);
+}
+
+function renderWallPagination() {
+  const totalPages=Math.ceil(state.totalWallPosts/state.wallPageSize);
+  if(totalPages<=1){$('wallPagination').hidden=true;$('wallPagination').innerHTML='';return;}
+  const pages=Array.from({length:totalPages},(_,index)=>index+1).map(page=>`<button class="page-button ${page===state.wallPage?'active':''}" type="button" data-wall-page="${page}" ${page===state.wallPage?'aria-current="page"':''}>${page}</button>`).join('');
+  $('wallPagination').innerHTML=`<button class="page-button" type="button" data-wall-page="${state.wallPage-1}" ${state.wallPage===1?'disabled':''}>上一页</button>${pages}<button class="page-button" type="button" data-wall-page="${state.wallPage+1}" ${state.wallPage===totalPages?'disabled':''}>下一页</button>`;
+  $('wallPagination').hidden=false;
+}
+
+function openWallSubmissionForm(){if(!requireBackend())return;$('wallSubmissionForm').reset();$('wallSubmissionError').textContent='';$('wallImageHint').textContent='只能添加一张照片，上传前会自动压缩为 WebP。';openModal('wallSubmissionModal');}
+
+async function uploadWallImage(file){
+  if(!file?.type.startsWith('image/'))throw new Error('请选择图片文件');
+  $('wallImageHint').textContent='正在压缩照片…';
+  const compressed=await compressToWebp(file);
+  const path=`wall-submissions/${crypto.randomUUID?crypto.randomUUID():Date.now()}.webp`;
+  const {error}=await state.client.storage.from('product-images').upload(path,new File([compressed],'wall-post.webp',{type:'image/webp'}),{cacheControl:'31536000',contentType:'image/webp',upsert:false});
+  if(error)throw error;
+  return {url:state.client.storage.from('product-images').getPublicUrl(path).data.publicUrl,path};
+}
+
+async function submitWallPost(event){
+  event.preventDefault();
+  const button=$('wallSubmissionSubmit'),file=$('wallImage').files[0];let uploaded=null;
+  $('wallSubmissionError').textContent='';busy(button,true,file?'处理照片中…':'提交中…');
+  try{
+    if(file)uploaded=await uploadWallImage(file);
+    const {error}=await state.client.rpc('submit_campus_wall_post',{p_nickname:$('wallNickname').value.trim(),p_title:$('wallTitle').value.trim(),p_content:$('wallContent').value.trim(),p_image_url:uploaded?.url||null,p_client_id:browserClientId()});
+    if(error)throw error;
+    closeModal('wallSubmissionModal');openModal('wallSubmissionResultModal');
+  }catch(error){if(uploaded?.path)await state.client.storage.from('product-images').remove([uploaded.path]);$('wallSubmissionError').textContent=friendlyError(error);}
+  finally{busy(button,false);}
+}
+
 function showEmpty(icon,title,text) {
   $('emptyIcon').textContent = icon;
   $('emptyTitle').textContent = title;
@@ -411,6 +485,9 @@ function showEmpty(icon,title,text) {
 }
 
 function searchFrom(inputId, scroll=false) {
+  state.homeView='products';
+  renderHomeView();
+  updateListModeButtons();
   state.search = $(inputId).value.trim();
   state.page = 1;
   $('navSearch').value = state.search;
@@ -431,13 +508,15 @@ function updateSortControl() {
 }
 
 function clearAllFilters() {
-  state.categoryId='all';state.search='';state.minPrice=null;state.maxPrice=null;state.sort='newest';state.listMode='latest';state.page=1;
+  state.homeView='products';state.categoryId='all';state.search='';state.minPrice=null;state.maxPrice=null;state.sort='newest';state.listMode='latest';state.page=1;
   $('navSearch').value='';$('mainSearch').value='';$('minPrice').value='';$('maxPrice').value='';
-  renderCategories();renderHotSearches();updateSortControl();updateListModeButtons();loadProducts();
+  renderHomeView();renderCategories();renderHotSearches();updateSortControl();updateListModeButtons();loadProducts();
 }
 
-function updateListModeButtons(){const recommended=state.listMode==='recommended';$('recommendedProductsButton').classList.toggle('active',recommended);$('recommendedProductsButton').setAttribute('aria-selected',String(recommended));$('latestProductsButton').classList.toggle('active',!recommended);$('latestProductsButton').setAttribute('aria-selected',String(!recommended));}
-function setListMode(mode){if(state.listMode===mode)return;state.listMode=mode;state.page=1;updateListModeButtons();loadProducts();}
+function updateListModeButtons(){const products=state.homeView==='products',recommended=products&&state.listMode==='recommended',latest=products&&state.listMode==='latest',wall=state.homeView==='wall';$('recommendedProductsButton').classList.toggle('active',recommended);$('recommendedProductsButton').setAttribute('aria-selected',String(recommended));$('latestProductsButton').classList.toggle('active',latest);$('latestProductsButton').setAttribute('aria-selected',String(latest));$('campusWallButton').classList.toggle('active',wall);$('campusWallButton').setAttribute('aria-selected',String(wall));}
+function renderHomeView(){const wall=state.homeView==='wall';$('productListView').hidden=wall;$('campusWallView').hidden=!wall;$('resultCount').textContent=wall?`共 ${state.totalWallPosts} 条校园动态`:`${state.listMode==='recommended'?'推荐 ':''}共 ${state.totalProducts} 件闲置`;}
+function setListMode(mode){state.homeView='products';const changed=state.listMode!==mode;state.listMode=mode;if(changed)state.page=1;renderHomeView();updateListModeButtons();loadProducts();}
+function openCampusWall(){state.homeView='wall';renderHomeView();updateListModeButtons();if(!state.wallLoaded)loadWallPosts();}
 
 function resetHome(event) {
   event?.preventDefault();
@@ -507,7 +586,7 @@ function openReserve(product) {
   state.reserveProduct = product;
   $('reserveForm').reset();
   $('reserveError').textContent = '';
-  $('reserveSummary').innerHTML = `<div class="product-media">${productMedia(product,true)}</div><div class="reserve-info"><h4>${escapeHtml(product.title)}</h4><div class="price">${priceText(product)}</div><div class="detail-stock">剩余 ${product.available_quantity} 件</div></div><div class="detail-description">${escapeHtml(product.description || '暂无详细描述')}</div>`;
+  $('reserveSummary').innerHTML = `<div class="product-media">${productMedia(product,true)}</div><div class="reserve-info"><h4>${escapeHtml(product.title)}</h4><div class="price">${priceText(product)}</div><div class="product-code-public">商品码：<strong>${escapeHtml(product.connection_code||'--')}</strong></div><div class="detail-stock">剩余 ${product.available_quantity} 件</div></div><div class="detail-description">${escapeHtml(product.description || '暂无详细描述')}</div>`;
   $('reserveBackdrop').classList.add('open');
   $('reserveDrawer').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -543,13 +622,12 @@ async function submitReservation(event) {
   }
   closeReserve();
   showConnectionInfo(data || {});
-  toast('想要已登记，请保存对接码');
+  toast('交换意向已登记');
   await loadProducts();
 }
 
 function showConnectionInfo(result) {
-  $('connectionCode').textContent = result.connection_code || '获取失败';
-  $('adminWechatText').textContent = result.seller_wechat || '暂未设置，请等待管理员联系';
+  $('exchangeWechat').textContent = result.exchange_wechat || '对方暂未填写，请等待管理员联系';
   openModal('connectionModal');
 }
 
@@ -561,20 +639,20 @@ function openImageLightbox(url,title='商品图片') {
   openModal('imageLightbox');
 }
 
-async function copyConnectionCode() {
-  const code = $('connectionCode').textContent;
-  if (!/^\d{5}$/.test(code)) return toast('对接码暂不可复制',false);
+async function copyExchangeWechat() {
+  const contact = $('exchangeWechat').textContent.trim();
+  if (!contact || contact.startsWith('对方暂未填写')) return toast('对方暂未填写交换微信',false);
   try {
-    await navigator.clipboard.writeText(code);
+    await navigator.clipboard.writeText(contact);
   } catch {
     const field = document.createElement('textarea');
-    field.value = code;
+    field.value = contact;
     document.body.appendChild(field);
     field.select();
     document.execCommand('copy');
     field.remove();
   }
-  toast('对接码已复制');
+  toast('交换微信已复制');
 }
 
 async function restoreAdminSession() {
@@ -683,7 +761,7 @@ async function loadAdminProducts() {
   const data = productsResult.data || [], reservations = reservationsResult.data || [];
   const wantedByProduct = reservations.reduce((map,item)=>{if(item.status!=='cancelled') map[item.product_id]=(map[item.product_id]||0)+1;return map;},{});
   $('adminContent').innerHTML = `<div class="admin-toolbar"><strong>全部商品（${data.length}）</strong><button class="btn btn-primary" data-add-product>+ 发布闲置</button></div><div class="admin-list">${data.map(p => `
-    <div class="admin-item"><div class="admin-info"><div class="admin-name">${escapeHtml(p.title)} ${p.is_demo?'<span class="condition">演示</span>':''}</div><div class="admin-meta">¥${money(p.price)} · ${escapeHtml(p.categories?.name || '未分类')} · ${escapeHtml(p.campus)} · ${new Date(p.created_at).toLocaleString('zh-CN')}</div><div class="admin-detail">${escapeHtml(p.description)}<br>对接码：<strong>${escapeHtml(p.connection_code || '生成中')}</strong> · 库存：${p.quantity} 件，已售：${p.sold_quantity} 件，剩余：${p.quantity-p.sold_quantity} 件，${wantedByProduct[p.id]||0} 人想要${p.seller_contact?`<br>卖家微信：${escapeHtml(p.seller_contact)}`:''}</div></div>
+    <div class="admin-item"><div class="admin-info"><div class="admin-name">${escapeHtml(p.title)} ${p.is_demo?'<span class="condition">演示</span>':''}</div><div class="admin-meta">¥${money(p.price)} · ${escapeHtml(p.categories?.name || '未分类')} · ${escapeHtml(p.campus)} · ${new Date(p.created_at).toLocaleString('zh-CN')}</div><div class="admin-detail">${escapeHtml(p.description)}<br>商品码：<strong>${escapeHtml(p.connection_code || '生成中')}</strong> · 库存：${p.quantity} 件，已售：${p.sold_quantity} 件，剩余：${p.quantity-p.sold_quantity} 件，${wantedByProduct[p.id]||0} 人想要${p.seller_contact?`<br>交换微信：${escapeHtml(p.seller_contact)}`:''}</div></div>
     <div class="admin-actions"><span class="mini-status status-${p.status}">${statusText[p.status]}</span><button class="btn btn-small btn-ghost" data-edit-product="${p.id}">编辑</button>${p.status!=='sold'?`<button class="btn btn-small btn-primary" data-product-status="${p.id}" data-status="sold">售罄</button>`:''}${p.status!=='removed'?`<button class="btn btn-small btn-ghost" data-product-status="${p.id}" data-status="removed">下架</button>`:`<button class="btn btn-small btn-ghost" data-product-status="${p.id}" data-status="available">上架</button>`}<button class="btn btn-small btn-danger" data-delete-product="${p.id}">删除</button></div></div>`).join('') || '<div class="empty show">暂无商品</div>'}</div>`;
   state.adminProducts = data;
 }
@@ -762,7 +840,7 @@ async function uploadSubmissionImage(file) {
 
 function openSubmissionForm() {
   $('submissionForm').reset();
-  $('submissionContact').placeholder='请填写正确微信号才能审核通过！';
+  $('submissionContact').placeholder='请填写正确的交换微信才能审核通过！';
   $('submissionQuantity').value=1;
   $('submissionError').textContent='';
   $('submissionImageHint').textContent='本地图片会压缩为 WebP，目标大小约 120KB 以内。';
@@ -997,6 +1075,7 @@ function subscribeRealtime() {
     .on('postgres_changes',{event:'*',schema:'public',table:'products'},() => { loadProducts(); if(state.adminView==='products'&&$('adminPanelModal').classList.contains('open')) loadAdminProducts(); })
     .on('postgres_changes',{event:'*',schema:'public',table:'categories'},() => { loadCategories().then(loadProducts); if(state.adminView==='categories'&&$('adminPanelModal').classList.contains('open')) loadAdminCategories(); })
     .on('postgres_changes',{event:'*',schema:'public',table:'hot_searches'},loadHotSearches)
+    .on('postgres_changes',{event:'*',schema:'public',table:'campus_wall_posts'},()=>{if(state.homeView==='wall')loadWallPosts();else state.wallLoaded=false;})
     .subscribe();
 }
 
@@ -1020,6 +1099,7 @@ function bindEvents() {
   $('homeLink').addEventListener('click',resetHome);
   $('recommendedProductsButton').addEventListener('click',()=>setListMode('recommended'));
   $('latestProductsButton').addEventListener('click',()=>setListMode('latest'));
+  $('campusWallButton').addEventListener('click',openCampusWall);
   $('adminButton').addEventListener('click',() => { $('adminLoginError').textContent=''; $('adminLoginForm').reset(); openModal('adminLoginModal'); });
   $('adminChip').addEventListener('click',() => $('adminSession').classList.toggle('open'));
   $('openAdminPanel').addEventListener('click',openAdminPanel);
@@ -1029,7 +1109,10 @@ function bindEvents() {
   $('buyerContact').addEventListener('input',event=>{event.target.value=event.target.value.replace(/[^A-Za-z0-9._-]/g,'');});
   $('reserveSummary').addEventListener('click',event => {const image=event.target.closest('[data-full-image]');if(image)openImageLightbox(image.dataset.fullImage,image.alt);});
   $('shareProductButton').addEventListener('click',shareProductDirectly);
-  $('copyConnectionCode').addEventListener('click',copyConnectionCode);
+  $('copyExchangeWechat').addEventListener('click',copyExchangeWechat);
+  $('openWallSubmission').addEventListener('click',openWallSubmissionForm);
+  $('wallSubmissionForm').addEventListener('submit',submitWallPost);
+  $('wallPagination').addEventListener('click',event=>{const button=event.target.closest('[data-wall-page]');if(!button||button.disabled)return;state.wallPage=Number(button.dataset.wallPage);loadWallPosts().then(()=>document.querySelector('.section-head').scrollIntoView({behavior:'smooth',block:'start'}));});
   $('productForm').addEventListener('submit',submitProduct);
   $('productPriceType').addEventListener('change',updateProductPriceInput);
   $('publicPublishButton').addEventListener('click',openSubmissionForm);
@@ -1048,7 +1131,10 @@ function bindEvents() {
     const button = event.target.closest('[data-category]');
     if (!button) return;
     state.categoryId = button.dataset.category;
+    state.homeView='products';
     state.page = 1;
+    renderHomeView();
+    updateListModeButtons();
     renderCategories();
     loadProducts();
   });
@@ -1072,12 +1158,12 @@ function bindEvents() {
     const min=minText===''?null:Number(minText),max=maxText===''?null:Number(maxText);
     if((min!==null&&(!Number.isFinite(min)||min<0))||(max!==null&&(!Number.isFinite(max)||max<0)))return toast('请输入正确的非负价格',false);
     if(min!==null&&max!==null&&min>max)return toast('最低价格不能高于最高价格',false);
-    state.minPrice=min;state.maxPrice=max;state.page=1;loadProducts();
+    state.homeView='products';state.minPrice=min;state.maxPrice=max;state.page=1;renderHomeView();updateListModeButtons();loadProducts();
   });
   $('clearPriceFilter').addEventListener('click',clearAllFilters);
   ['minPrice','maxPrice'].forEach(id=>$(id).addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();$('applyPriceFilter').click();}}));
   $('sortToggle').addEventListener('click',()=>{const opening=$('sortMenu').hidden;$('sortMenu').hidden=!opening;$('sortToggle').setAttribute('aria-expanded',String(opening));});
-  $('sortMenu').addEventListener('click',event=>{const button=event.target.closest('[data-sort]');if(!button)return;state.sort=button.dataset.sort;state.page=1;updateSortControl();loadProducts();});
+  $('sortMenu').addEventListener('click',event=>{const button=event.target.closest('[data-sort]');if(!button)return;state.homeView='products';state.sort=button.dataset.sort;state.page=1;renderHomeView();updateListModeButtons();updateSortControl();loadProducts();});
   $('pagination').addEventListener('click',event=>{const button=event.target.closest('[data-page]');if(!button||button.disabled)return;state.page=Number(button.dataset.page);loadProducts().then(()=>document.querySelector('.section-head').scrollIntoView({behavior:'smooth',block:'start'}));});
   $('introductionButton').addEventListener('click',openIntroduction);
   document.querySelectorAll('[data-admin-view]').forEach(button => button.addEventListener('click',() => {state.adminView=button.dataset.adminView;loadAdminView();}));
