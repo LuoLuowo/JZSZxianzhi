@@ -177,6 +177,7 @@ async function loadPublicSettings() {
   state.publicSettings=data || {announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''};
   const announcement=state.publicSettings.announcement?.trim();
   $('heroHeadline').textContent=state.publicSettings.hero_headline?.trim() || '发现校园好物';
+  requestAnimationFrame(fitHeroHeadline);
   $('heroSubtitle').textContent=state.publicSettings.hero_subtitle?.trim() || '校内二手闲置交换，教材、数码、生活好物，轻松找到下一位主人。';
   renderAnnouncement(announcement);
 }
@@ -200,6 +201,19 @@ function renderAnnouncement(announcement) {
     track.append(duplicate);
     bar.classList.add('scrolling');
   });
+}
+
+function fitHeroHeadline() {
+  const title=$('heroHeadline');
+  title.style.fontSize='';
+  if(window.innerWidth>760)return;
+  const maxWidth=title.parentElement.clientWidth;
+  let size=30;
+  title.style.fontSize=`${size}px`;
+  while(title.getBoundingClientRect().width>maxWidth&&size>16){
+    size-=1;
+    title.style.fontSize=`${size}px`;
+  }
 }
 
 function openIntroduction() {
@@ -917,7 +931,7 @@ function bindEvents() {
   document.addEventListener('click',event => { if(!event.target.closest('#adminSession')) $('adminSession').classList.remove('open');if(!event.target.closest('#sortFilter'))closeSortMenu(); });
   document.addEventListener('keydown',event => { if(event.key==='Escape'){closeSortMenu();state.pendingConfirm=null;document.querySelectorAll('.modal-backdrop.open').forEach(m=>closeModal(m.id));closeReserve();} });
   let currentPageSize=productsPerPage();
-  window.addEventListener('resize',debounce(()=>{const next=productsPerPage();updateCategoryScrollHint();if(next!==currentPageSize){currentPageSize=next;state.page=1;loadProducts();}},250));
+  window.addEventListener('resize',debounce(()=>{const next=productsPerPage();fitHeroHeadline();updateCategoryScrollHint();if(next!==currentPageSize){currentPageSize=next;state.page=1;loadProducts();}},250));
 }
 
 async function init() {
