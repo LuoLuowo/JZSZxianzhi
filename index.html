@@ -11,7 +11,7 @@
   <div class="notice" id="notice"></div>
   <header class="header">
     <div class="header-inner">
-      <a class="logo" href="#" id="homeLink" aria-label="返回首页"><span class="logo-icon">🌱</span></a>
+      <a class="logo" href="#" id="homeLink" aria-label="返回首页"><span class="logo-icon">🌱</span><span class="logo-text">焦专好物平台</span></a>
       <div class="nav-search">
         <input id="navSearch" type="search" placeholder="搜索闲置好物…" aria-label="搜索商品">
         <button id="navSearchButton" aria-label="搜索">⌕</button>
@@ -31,7 +31,7 @@
 
   <section class="hero">
     <div class="hero-actions"><button class="hero-link" id="introductionButton" type="button">📖 网站介绍</button></div>
-    <h1 class="hero-title">焦大师专闲置好物平台</h1>
+    <h1 class="hero-title" id="heroHeadline">发现校园好物</h1>
     <p class="hero-subtitle" id="heroSubtitle">校内二手闲置交换，教材、数码、生活好物，轻松找到下一位主人。</p>
     <div class="main-search"><input id="mainSearch" type="search" placeholder="搜索标题或商品描述…"><button id="mainSearchButton">搜索</button></div>
   </section>
@@ -45,7 +45,7 @@
     </section>
   </div>
 
-  <nav class="categories" aria-label="闲置分类"><div class="category-list" id="categoryList"><button class="category-tag active" data-category="all">全部</button></div></nav>
+  <nav class="categories" aria-label="闲置分类"><div class="category-list" id="categoryList"><button class="category-tag active" data-category="all">全部</button></div><button class="category-scroll-hint" id="categoryScrollHint" type="button" aria-label="查看更多分类" title="查看更多分类">›</button></nav>
   <div class="hot-searches" id="hotSearches" hidden><span class="hot-search-label">近期热搜</span><div class="hot-search-list" id="hotSearchList"></div></div>
 
   <main class="main">

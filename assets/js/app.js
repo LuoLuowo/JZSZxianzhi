@@ -21,7 +21,7 @@ const state = {
   editingProduct: null,
   editingCategory: null,
   pendingConfirm: null,
-  publicSettings: {announcement:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},
+  publicSettings: {announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''},
   channel: null,
   presenceChannel: null
 };
@@ -174,8 +174,9 @@ function productsPerPage() {
 async function loadPublicSettings() {
   const {data,error}=await state.client.from('public_site_settings').select('*').eq('id',true).maybeSingle();
   if (error) throw error;
-  state.publicSettings=data || {announcement:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''};
+  state.publicSettings=data || {announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:''};
   const announcement=state.publicSettings.announcement?.trim();
+  $('heroHeadline').textContent=state.publicSettings.hero_headline?.trim() || '发现校园好物';
   $('heroSubtitle').textContent=state.publicSettings.hero_subtitle?.trim() || '校内二手闲置交换，教材、数码、生活好物，轻松找到下一位主人。';
   renderAnnouncement(announcement);
 }
@@ -236,6 +237,13 @@ function renderCategories() {
     state.categories.filter(c => c.is_active || state.admin).map(c =>
       `<button class="category-tag ${String(c.id)===String(state.categoryId)?'active':''}" data-category="${c.id}">${escapeHtml(c.icon)} ${escapeHtml(c.name)}</button>`
     ).join('');
+  requestAnimationFrame(updateCategoryScrollHint);
+}
+
+function updateCategoryScrollHint() {
+  const list=$('categoryList');
+  const hint=$('categoryScrollHint');
+  hint.hidden=list.scrollWidth<=list.clientWidth+4 || list.scrollLeft+list.clientWidth>=list.scrollWidth-4;
 }
 
 function fillCategorySelect() {
@@ -848,6 +856,8 @@ function bindEvents() {
     renderCategories();
     loadProducts();
   });
+  $('categoryList').addEventListener('scroll',updateCategoryScrollHint,{passive:true});
+  $('categoryScrollHint').addEventListener('click',()=>{$('categoryList').scrollBy({left:Math.max(180,$('categoryList').clientWidth*.75),behavior:'smooth'});});
   $('hotSearchList').addEventListener('click',event=>{
     const button=event.target.closest('[data-hot-search]');
     if(!button)return;
@@ -907,7 +917,7 @@ function bindEvents() {
   document.addEventListener('click',event => { if(!event.target.closest('#adminSession')) $('adminSession').classList.remove('open');if(!event.target.closest('#sortFilter'))closeSortMenu(); });
   document.addEventListener('keydown',event => { if(event.key==='Escape'){closeSortMenu();state.pendingConfirm=null;document.querySelectorAll('.modal-backdrop.open').forEach(m=>closeModal(m.id));closeReserve();} });
   let currentPageSize=productsPerPage();
-  window.addEventListener('resize',debounce(()=>{const next=productsPerPage();if(next!==currentPageSize){currentPageSize=next;state.page=1;loadProducts();}},250));
+  window.addEventListener('resize',debounce(()=>{const next=productsPerPage();updateCategoryScrollHint();if(next!==currentPageSize){currentPageSize=next;state.page=1;loadProducts();}},250));
 }
 
 async function init() {

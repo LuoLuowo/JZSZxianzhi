@@ -62,6 +62,7 @@ create table public.site_settings (
   id boolean primary key default true check (id),
   admin_wechat text not null default '',
   announcement text not null default '' check (char_length(announcement) <= 2000),
+  hero_headline text not null default '发现校园好物' check (char_length(hero_headline) <= 200),
   hero_subtitle text not null default '校内二手闲置交换，教材、数码、生活好物，轻松找到下一位主人。' check (char_length(hero_subtitle) <= 500),
   introduction_content text not null default '' check (char_length(introduction_content) <= 5000),
   introduction_image_url text,
@@ -383,7 +384,7 @@ group by p.id,c.id;
 -- 仅公开公告和群二维码，不暴露其他后台设置。
 create view public.public_site_settings
 with (security_invoker = false)
-as select id,announcement,hero_subtitle,introduction_content,introduction_image_url,updated_at from public.site_settings where id=true;
+as select id,announcement,hero_headline,hero_subtitle,introduction_content,introduction_image_url,updated_at from public.site_settings where id=true;
 
 revoke all on public.profiles,public.categories,public.hot_searches,public.site_settings,public.product_code_registry,public.products,public.reservations from anon,authenticated;
 grant select on public.categories to anon,authenticated;
