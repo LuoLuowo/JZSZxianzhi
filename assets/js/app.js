@@ -579,7 +579,7 @@ function setSharePoster(product,blob,token) {
   $('sharePosterImage').src=state.sharePosterUrl;
   $('sharePosterTitle').textContent=`分享：${product.title}`;
   $('shareProductButton').disabled=false;
-  $('shareProductButton').textContent='📣 分享商品海报';
+  $('shareProductButton').textContent='分享商品';
 }
 
 async function prepareSharePoster(product) {
@@ -606,6 +606,17 @@ async function prepareSharePoster(product) {
 function openSharePoster() {
   if(!state.sharePosterBlob||!state.sharePosterUrl)return;
   openModal('sharePosterModal');
+}
+
+async function shareProductDirectly() {
+  if(!state.sharePosterBlob||!state.reserveProduct)return;
+  const file=new File([state.sharePosterBlob],posterFileName(),{type:'image/jpeg'});
+  if(navigator.share&&navigator.canShare?.({files:[file]})){
+    try{await navigator.share({title:state.reserveProduct.title,text:'焦专好物平台发现一个校园闲置好物',files:[file]});}
+    catch(error){if(error?.name!=='AbortError')openSharePoster();}
+    return;
+  }
+  openSharePoster();
 }
 
 function posterFileName() {
@@ -1177,7 +1188,7 @@ function bindEvents() {
   $('reserveForm').addEventListener('submit',submitReservation);
   $('buyerContact').addEventListener('input',event=>{event.target.value=event.target.value.replace(/[^A-Za-z0-9._-]/g,'');});
   $('reserveSummary').addEventListener('click',event => {const image=event.target.closest('[data-full-image]');if(image)openImageLightbox(image.dataset.fullImage,image.alt);});
-  $('shareProductButton').addEventListener('click',openSharePoster);
+  $('shareProductButton').addEventListener('click',shareProductDirectly);
   $('downloadPosterButton').addEventListener('click',()=>downloadSharePoster());
   $('nativeSharePosterButton').addEventListener('click',nativeSharePoster);
   $('copyConnectionCode').addEventListener('click',copyConnectionCode);

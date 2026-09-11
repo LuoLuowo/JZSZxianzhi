@@ -100,10 +100,9 @@
 
   <div class="drawer-backdrop" id="reserveBackdrop"></div>
   <section class="drawer" id="reserveDrawer" role="dialog" aria-modal="true" aria-labelledby="reserveTitle">
-    <div class="drawer-handle"></div><div class="drawer-head"><h3 id="reserveTitle">我想要这个闲置</h3><button class="close-btn" id="closeReserve">×</button></div>
+    <div class="drawer-handle"></div><div class="drawer-head"><h3 id="reserveTitle">我想要这个闲置</h3><div class="drawer-head-actions"><button class="btn btn-ghost btn-small" id="shareProductButton" type="button" disabled>海报准备中…</button><button class="close-btn" id="closeReserve">×</button></div></div>
     <div class="drawer-body">
       <div class="reserve-summary" id="reserveSummary"></div>
-      <div class="detail-share-row"><span>分享给同学，扫码直达这个好物</span><button class="btn btn-ghost btn-small" id="shareProductButton" type="button" disabled>海报准备中…</button></div>
       <form id="reserveForm" autocomplete="off">
         <div class="field-group"><label class="label" for="buyerName">称呼您</label><input class="field" id="buyerName" maxlength="6" required autocomplete="off" placeholder="最多输入6个文字"></div>
         <div class="field-group"><label class="label" for="buyerContact">您的微信号</label><input class="field" id="buyerContact" maxlength="120" required pattern="[A-Za-z0-9._-]+" title="仅支持英文字母、数字和 . _ - 符号" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="请输入您的交换微信号"></div>
