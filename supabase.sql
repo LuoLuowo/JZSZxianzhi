@@ -706,6 +706,15 @@ create view public.public_site_settings
 with (security_invoker = false)
 as select id,announcement,hero_headline,hero_subtitle,introduction_content,introduction_image_url,wall_review_enabled,updated_at from public.site_settings where id=true;
 
+create or replace function public.get_wall_review_enabled()
+returns boolean
+language sql
+security definer
+set search_path = public, pg_temp
+as $$ select coalesce((select wall_review_enabled from public.site_settings where id=true),true); $$;
+revoke all on function public.get_wall_review_enabled() from public;
+grant execute on function public.get_wall_review_enabled() to anon,authenticated;
+
 create view public.public_campus_wall_posts
 with (security_invoker = false)
 as select id,nickname,title,content,image_url,is_pinned,created_at

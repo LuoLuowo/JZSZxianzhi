@@ -268,6 +268,10 @@ async function loadPublicSettings() {
   const {data,error}=await state.client.from('public_site_settings').select('*').eq('id',true).maybeSingle();
   if (error) throw error;
   state.publicSettings={announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:'',wall_review_enabled:true,...(data||{})};
+  if(typeof data?.wall_review_enabled!=='boolean'){
+    const {data:reviewMode}=await state.client.rpc('get_wall_review_enabled');
+    if(typeof reviewMode==='boolean')state.publicSettings.wall_review_enabled=reviewMode;
+  }
   const announcement=state.publicSettings.announcement?.trim();
   $('heroHeadline').textContent=state.publicSettings.hero_headline?.trim() || '发现校园好物';
   requestAnimationFrame(fitHeroHeadline);
