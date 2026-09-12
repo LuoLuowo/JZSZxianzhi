@@ -5,7 +5,7 @@ const db = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 const $ = id => document.getElementById(id);
 const state = {user:null,view:'overview',search:'',products:[],submissions:[],wallPosts:[],wallError:null,wallReports:[],wallReportError:null,reservations:[],notifications:[],codes:[],hotSearches:[],hotSearchError:null,admins:[],settings:{admin_wechat:'',announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:'',wall_review_enabled:true},resources:{},confirmAction:null,editingProduct:null,channel:null,presenceChannel:null,onlineCount:0,visitorCount:0};
 const viewMeta = {
-  overview:['数据概览','查看平台实时运营数据'],products:['商品管理','查询商品、库存、交换微信和商品码'],submissions:['发布审核','审核普通用户提交的闲置'],campusWall:['投稿区审核','审核、置顶和管理投稿区内容'],wallReports:['举报反馈','查看并处理用户提交的投稿举报'],
+  overview:['数据概览','查看平台实时运营数据'],products:['商品管理','查询商品、库存、交换微信和商品码'],recommended:['推荐闲置','集中管理首页“推荐闲置”展示内容'],submissions:['发布审核','审核普通用户提交的闲置'],campusWall:['投稿区审核','审核、置顶和管理投稿区内容'],wallReports:['举报反馈','查看并处理用户提交的投稿举报'],
   reservations:['想要记录','查询交换微信并处理成交'],codes:['商品码查询','查询当前和历史商品码'],
   resources:['资源占用','查看图片、Storage 和数据库实时占用'],categories:['分类管理','维护前台商品分类'],hotSearches:['热搜管理','添加、排序、启用或删除首页近期热搜'],admins:['管理员管理','授权其他管理员共同管理网站']
 };
@@ -113,7 +113,7 @@ function setView(view) {
   state.view=view; state.search=''; $('adminSearch').value='';
   document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button.dataset.view===view));
   $('viewTitle').textContent=viewMeta[view][0]; $('viewDescription').textContent=viewMeta[view][1];
-  const hints={overview:'概览无需查询',products:'商品名、商品码、交换微信',submissions:'商品名、交换微信、分类或审核状态',campusWall:'昵称、内容或审核状态',wallReports:'投稿内容、举报问题或处理状态',reservations:'商品、商品码、称呼、交换微信',codes:'输入五位商品码或商品名',resources:'图片标题或 URL',categories:'分类名称',hotSearches:'热搜关键词',admins:'管理员邮箱或昵称'};
+  const hints={overview:'概览无需查询',products:'商品名、商品码、交换微信',recommended:'推荐商品名、商品码或分类',submissions:'商品名、交换微信、分类或审核状态',campusWall:'昵称、内容或审核状态',wallReports:'投稿内容、举报问题或处理状态',reservations:'商品、商品码、称呼、交换微信',codes:'输入五位商品码或商品名',resources:'图片标题或 URL',categories:'分类名称',hotSearches:'热搜关键词',admins:'管理员邮箱或昵称'};
   $('adminSearch').placeholder=hints[view]; $('adminSearch').disabled=view==='overview'; $('adminSearchButton').disabled=view==='overview'; render();
   if(view==='submissions')void markNotificationsRead('submission');
   if(view==='campusWall')void markNotificationsRead('campus_wall');
@@ -131,6 +131,7 @@ function handleNotificationChange(payload){if(payload.eventType!=='INSERT')retur
 function render() {
   if (state.view==='overview') return renderOverview();
   if (state.view==='products') return renderProducts();
+  if (state.view==='recommended') return renderRecommendedProducts();
   if (state.view==='submissions') return renderSubmissions();
   if (state.view==='campusWall') return renderCampusWall();
   if (state.view==='wallReports') return renderWallReports();
@@ -161,6 +162,12 @@ function table(headers,rows) { return `<div class="data-card"><table class="data
 function renderProducts() {
   const data=filtered(state.products,p=>[p.title,p.description,p.connection_code,p.campus,p.seller_contact,p.categories?.name,p.status]);
   $('adminPageContent').innerHTML=table(['图片','商品码 / 商品','价格与分类','库存','交换微信','状态 / 时间','操作'],data.map(p=>`<tr><td>${p.image_url?`<img class="table-thumb" src="${esc(p.image_url)}" alt="${esc(p.title)}">`:'<div class="table-thumb">📦</div>'}</td><td><div class="code">${esc(p.connection_code)}</div><strong>${p.is_pinned?'🔝 ':''}${p.is_recommended?'⭐ ':''}${esc(p.title)}</strong><div class="hint">${esc(p.description)}</div></td><td>${priceText(p)}<br>${esc(p.categories?.icon||'📦')} ${esc(p.categories?.name||'未分类')}<br>${esc(p.campus)} · ${esc(p.condition)}</td><td>总数 ${p.quantity}<br>已售 ${p.sold_quantity}<br>剩余 ${p.quantity-p.sold_quantity}</td><td class="private-data">${esc(p.seller_contact||'未填写')}</td><td>${productStatus[p.status]||p.status}<br><span class="hint">${dateText(p.created_at)}</span></td><td><div class="actions"><button class="btn btn-ghost btn-small" data-edit-product="${p.id}">编辑</button>${p.status!=='sold'?`<button class="btn btn-primary btn-small" data-product-status="sold" data-id="${p.id}">标记售罄</button>`:''}${p.status!=='removed'?`<button class="btn btn-ghost btn-small" data-product-status="removed" data-id="${p.id}">下架</button>`:`<button class="btn btn-ghost btn-small" data-product-status="available" data-id="${p.id}">上架</button>`}<button class="btn btn-danger btn-small" data-delete-product="${p.id}">删除</button></div></td></tr>`).join(''));
+}
+
+function renderRecommendedProducts() {
+  const recommended=state.products.filter(product=>product.is_recommended);
+  const data=filtered(recommended,product=>[product.title,product.connection_code,product.categories?.name,product.status]);
+  $('adminPageContent').innerHTML=`<div class="toolbar-row"><div><strong>当前推荐 ${recommended.length} 件</strong><div class="hint">推荐闲置会展示在首页“推荐闲置”列表中。</div></div></div>`+table(['图片','商品码 / 商品','价格与分类','库存','状态','操作'],data.map(product=>`<tr><td>${product.image_url?`<img class="table-thumb" src="${esc(product.image_url)}" alt="${esc(product.title)}">`:'<div class="table-thumb">📦</div>'}</td><td><div class="code">${esc(product.connection_code)}</div><strong>${product.is_pinned?'🔝 ':''}⭐ ${esc(product.title)}</strong><div class="hint">${esc(product.description||'未填写描述')}</div></td><td>${priceText(product)}<br>${esc(product.categories?.icon||'📦')} ${esc(product.categories?.name||'未分类')}</td><td>总数 ${product.quantity}<br>已售 ${product.sold_quantity}<br>剩余 ${product.quantity-product.sold_quantity}</td><td>${productStatus[product.status]||product.status}</td><td><div class="actions"><button class="btn btn-ghost btn-small" data-edit-product="${product.id}">编辑</button><button class="btn btn-danger btn-small" data-recommend-product="${product.id}" data-recommend-value="false">取消推荐</button></div></td></tr>`).join(''));
 }
 
 function renderSubmissions() {
@@ -321,6 +328,7 @@ async function setProductStatus(id,status) {
   if(status==='available'&&product.sold_quantity>=product.quantity)payload.sold_quantity=0;
   const {error}=await db.from('products').update(payload).eq('id',id); if(error)return toast(errorText(error),false); toast('商品状态已更新'); await refreshData();
 }
+async function setProductRecommended(id,value){const {error}=await db.from('products').update({is_recommended:value}).eq('id',id);if(error)return toast(errorText(error),false);toast(value?'已加入推荐闲置':'已取消推荐闲置');await refreshData();}
 async function deleteProduct(id) { const product=state.products.find(p=>p.id===id); const {error}=await db.from('products').delete().eq('id',id); if(error)return toast(errorText(error),false); if(product?.image_url){const marker='/storage/v1/object/public/product-images/';const i=product.image_url.indexOf(marker);if(i>=0)await db.storage.from('product-images').remove([decodeURIComponent(product.image_url.slice(i+marker.length))]);} toast('商品已删除，商品码已永久保留'); await refreshData(); }
 async function setReservationStatus(id,status) { const {error}=await db.rpc('admin_set_reservation_status',{p_reservation_id:id,p_status:status}); if(error)return toast(errorText(error),false); if(status==='cancelled'){const removed=await db.from('reservations').delete().eq('id',id);if(removed.error)return toast(errorText(removed.error),false);toast('已取消并移除该想要记录');}else toast('已确认成交');await refreshData(); }
 async function deleteReservation(id) { const {error}=await db.from('reservations').delete().eq('id',id); if(error)return toast(errorText(error),false); toast('想要记录已删除'); await refreshData(); }
@@ -361,6 +369,8 @@ function bindEvents() {
     if(target.closest('[data-introduction-red]')){const editor=$('introductionContentInput');editor.focus();document.execCommand('foreColor',false,'#e64b4b');return;}
     if(target.dataset.copyCode)return copyCode(target.dataset.copyCode);
     if(target.dataset.editProduct)return openProductEditor(target.dataset.editProduct);
+    const recommendation=target.closest('[data-recommend-product]');
+    if(recommendation){const product=state.products.find(item=>item.id===recommendation.dataset.recommendProduct);const value=recommendation.dataset.recommendValue==='true';return askConfirm(value?'加入推荐闲置':'取消推荐闲置',`确定要${value?'将':'把'}“${product?.title||'该商品'}”${value?'加入':'移出'}首页推荐闲置吗？`,value?'加入推荐':'取消推荐',()=>setProductRecommended(recommendation.dataset.recommendProduct,value),value);}
     const deleteSubmissionButton=target.closest('[data-delete-submission]');
     if(deleteSubmissionButton){const submission=state.submissions.find(item=>item.id===deleteSubmissionButton.dataset.deleteSubmission);return askConfirm('删除拒绝记录',`确定永久删除“${submission?.title||'该闲置'}”的拒绝记录吗？本地上传图片也会一并清理，此操作无法恢复。`,'永久删除',()=>deleteRejectedSubmission(deleteSubmissionButton.dataset.deleteSubmission));}
     const reviewButton=target.closest('[data-review-submission]');
