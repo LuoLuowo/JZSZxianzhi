@@ -1,4 +1,4 @@
-const STATIC_CACHE='jzzhw-static-v7';
+const STATIC_CACHE='jzzhw-static-v8';
 const IMAGE_CACHE='jzzhw-images-v1';
 const STATIC_ASSETS=['/','/index.html','/admin.html','/assets/css/style.css','/assets/css/admin.css','/assets/js/app.js','/assets/js/admin.js','/assets/images/site-logo.webp','/assets/images/site-mark.webp'];
 
@@ -31,7 +31,7 @@ async function fastNetworkWithCache(request){
   const cache=await caches.open(STATIC_CACHE);
   const url=new URL(request.url);
   const fallbackPath=request.mode==='navigate'?(url.pathname==='/'?'/index.html':url.pathname):null;
-  const cached=await cache.match(request,{ignoreSearch:true})||(fallbackPath?await cache.match(fallbackPath):null);
+  const cached=await cache.match(request)||(fallbackPath?await cache.match(fallbackPath):null);
   const network=fetch(request).then(response=>{
     if(response.ok)cache.put(request,response.clone()).catch(()=>{});
     return response;
