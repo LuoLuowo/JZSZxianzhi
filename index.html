@@ -56,7 +56,7 @@
             <div class="field-group"><label class="label" for="submissionQuantity">商品数量</label><input class="field" id="submissionQuantity" type="number" min="1" max="9999" value="1" required></div>
             <div class="field-group"><label class="label" for="submissionContact">交换微信</label><input class="field" id="submissionContact" maxlength="120" required pattern="[A-Za-z0-9._-]+" title="仅支持英文字母、数字和 . _ - 符号" autocapitalize="off" spellcheck="false" placeholder="请填写正确的交换微信才能审核通过"></div>
             <div class="field-group"><label class="label" for="submissionImageUrl">图片 URL（可选）</label><input class="field" id="submissionImageUrl" type="url" placeholder="https://example.com/image.jpg"></div>
-            <div class="field-group"><label class="label" for="submissionImage">上传图片（可选）</label><input class="field" id="submissionImage" type="file" accept="image/*"><div class="hint" id="submissionImageHint">本地图片会压缩为 WebP，目标大小约 120KB 以内。</div></div>
+            <div class="field-group"><label class="label" for="submissionImage">上传图片（可选）</label><input class="field" id="submissionImage" type="file" accept="image/*"><div class="hint" id="submissionImageHint">本地图片会自动压缩为 WebP 后上传，无需担心图片大小。</div></div>
             <div class="error" id="submissionError"></div><button class="submit" id="submissionSubmit" type="submit">提交管理员审核</button>
           </form>
         </div>
@@ -153,7 +153,7 @@
           <div class="field-group"><label class="label" for="productQuantity">商品数量</label><input class="field" id="productQuantity" type="number" min="1" max="9999" value="1" required></div>
           <div class="field-group"><label class="label" for="sellerContact">交换微信</label><input class="field" id="sellerContact" maxlength="120" required pattern="[A-Za-z0-9._-]+" title="仅支持英文字母、数字和 . _ - 符号" autocapitalize="off" spellcheck="false" placeholder="成交意向登记后将提供给对方"></div>
           <div class="field-group"><label class="label" for="productImageUrl">图片 URL（可选）</label><input class="field" id="productImageUrl" type="url" placeholder="https://example.com/image.jpg"><div class="hint">URL 将直接保存并作为商品图片显示，不下载、不转换。</div></div>
-          <div class="field-group"><label class="label" for="productImage">上传图片（可选）</label><input class="field" id="productImage" type="file" accept="image/*"><div class="hint" id="imageHint">本地图片会压缩为 WebP，目标大小约 120KB 以内。</div></div>
+          <div class="field-group"><label class="label" for="productImage">上传图片（可选）</label><input class="field" id="productImage" type="file" accept="image/*"><div class="hint" id="imageHint">本地图片会自动压缩为 WebP 后上传，无需担心图片大小。</div></div>
           <div class="error" id="productError"></div><div class="form-submit-actions"><button class="btn btn-primary" id="productSubmitContinue" type="submit">保存并继续添加</button><button class="btn btn-ghost" id="productSubmit" type="submit">保存并关闭</button></div>
         </form>
       </div>
@@ -186,6 +186,6 @@
   <div class="toast" id="toast" role="status"><span class="toast-icon" id="toastIcon">✓</span><span id="toastText">操作成功</span></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0"></script>
-  <script src="assets/js/app.js?v=5"></script>
+  <script src="assets/js/app.js?v=6"></script>
 </body>
 </html>

@@ -857,22 +857,23 @@ function openProductForm(product=null) {
   $('productSubmitContinue').hidden=!!product;
   $('sellerContact').value = product?.seller_contact || '';
   $('productImageUrl').value = '';
-  $('imageHint').textContent = product?.image_url ? '当前已有图片；上传新图片或输入 URL 会替换它。本地图片会压缩至约 120KB 以内。' : '本地图片会压缩为 WebP，目标大小约 120KB 以内。';
+  $('imageHint').textContent = product?.image_url ? '当前已有图片；上传新图片或输入 URL 会替换它。本地图片会自动压缩后上传。' : '本地图片会自动压缩为 WebP 后上传，无需担心图片大小。';
   openModal('productModal');
 }
 
 async function compressToWebp(blob) {
-  if (blob.size > 20 * 1024 * 1024) throw new Error('原图不能超过 20MB');
   const objectUrl = URL.createObjectURL(blob);
   try {
     const image = new Image();
     image.src = objectUrl;
     await image.decode();
-    const targetBytes = 120*1024;
+    // 普通用户上传的照片统一自动压缩，不用因为原图体积大而阻止发布。
+    // 极端图片会继续缩小分辨率；最后仍保留已压缩的最小版本并上传。
+    const targetBytes = 180*1024;
     let scale = Math.min(1, 1280 / Math.max(image.naturalWidth, image.naturalHeight));
     let quality = .84;
     let output;
-    for (let attempt=0; attempt<18; attempt++) {
+    for (let attempt=0; attempt<28; attempt++) {
       const canvas = document.createElement('canvas');
       canvas.width = Math.max(1,Math.round(image.naturalWidth*scale));
       canvas.height = Math.max(1,Math.round(image.naturalHeight*scale));
@@ -880,10 +881,10 @@ async function compressToWebp(blob) {
       output = await new Promise(resolve => canvas.toBlob(resolve,'image/webp',quality));
       if (!output) throw new Error('图片转换失败');
       if (output.size <= targetBytes) break;
-      if (quality > .42) quality -= .07;
-      else { scale *= .82; quality = .68; }
+      if (quality > .28) quality -= .07;
+      else { scale *= .76; quality = .68; }
     }
-    if (!output || output.size > targetBytes) throw new Error('图片过大，压缩后仍超过 120KB，请换一张图片');
+    if (!output) throw new Error('图片转换失败');
     return output;
   } finally {
     URL.revokeObjectURL(objectUrl);
@@ -916,7 +917,7 @@ function openSubmissionForm() {
   $('submissionContact').placeholder='请填写正确的交换微信才能审核通过！';
   $('submissionQuantity').value=1;
   $('submissionError').textContent='';
-  $('submissionImageHint').textContent='本地图片会压缩为 WebP，目标大小约 120KB 以内。';
+  $('submissionImageHint').textContent='本地图片会自动压缩为 WebP 后上传，无需担心图片大小。';
   updateSubmissionPriceInput();
   openModal('submissionModal');
 }
@@ -999,7 +1000,7 @@ async function submitProduct(event) {
       updateProductPriceInput();
       $('productQuantity').min=1;
       $('productFormTitle').textContent='继续发布闲置';
-      $('imageHint').textContent='本地图片会压缩为 WebP，目标大小约 120KB 以内。';
+      $('imageHint').textContent='本地图片会自动压缩为 WebP 后上传，无需担心图片大小。';
       $('productError').textContent='';
       setTimeout(()=>$('productTitle').focus(),50);
     } else closeModal('productModal');
@@ -1282,7 +1283,7 @@ async function init() {
   }
   state.client = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
   window.supabaseClient = state.client;
-  if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js?v=6').catch(()=>{}),{once:true});
+  if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js?v=7').catch(()=>{}),{once:true});
   // 每个浏览器标识仅会在数据库中写入一次；失败不影响正常浏览商品。
   Promise.resolve(state.client.rpc('track_site_visitor',{p_client_id:browserClientId()})).catch(()=>{});
   subscribePresence();
