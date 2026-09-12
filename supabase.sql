@@ -31,6 +31,8 @@ drop function if exists public.validate_seller_contact() cascade;
 drop function if exists public.create_submission_notification() cascade;
 drop function if exists public.create_reservation_notification() cascade;
 drop function if exists public.submit_campus_wall_post(text,text,text,text,uuid) cascade;
+drop function if exists public.update_own_campus_wall_post(uuid,text,uuid) cascade;
+drop function if exists public.submit_campus_wall_report(uuid,text,uuid) cascade;
 drop function if exists public.admin_review_campus_wall_post(uuid,text) cascade;
 drop function if exists public.create_campus_wall_notification() cascade;
 drop table if exists public.reservations cascade;
@@ -39,6 +41,7 @@ drop table if exists public.submission_rate_limits cascade;
 drop table if exists public.admin_notifications cascade;
 drop table if exists public.site_visitors cascade;
 drop table if exists public.product_submissions cascade;
+drop table if exists public.campus_wall_reports cascade;
 drop table if exists public.campus_wall_posts cascade;
 drop table if exists public.products cascade;
 drop table if exists public.hot_searches cascade;
@@ -224,7 +227,7 @@ create table public.submission_rate_limits (
 
 create table public.admin_notifications (
   id uuid primary key default gen_random_uuid(),
-  kind text not null check (kind in ('submission','reservation','campus_wall')),
+  kind text not null check (kind in ('submission','reservation','campus_wall','wall_report')),
   reference_id uuid not null,
   title text not null,
   body text not null default '',
@@ -246,11 +249,24 @@ create table public.campus_wall_posts (
   content text not null check (char_length(content) between 1 and 3000),
   image_url text,
   status text not null default 'pending' check (status in ('pending','approved','rejected')),
+  approval_source text not null default 'manual' check (approval_source in ('manual','automatic')),
   is_pinned boolean not null default false,
   client_id uuid not null,
   reviewed_at timestamptz,
   reviewed_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now()
+);
+
+create table public.campus_wall_reports (
+  id uuid primary key default gen_random_uuid(),
+  post_id uuid not null references public.campus_wall_posts(id) on delete cascade,
+  reason text not null check (char_length(reason) between 2 and 500),
+  client_id uuid not null,
+  status text not null default 'pending' check (status in ('pending','handled')),
+  handled_at timestamptz,
+  handled_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (post_id,client_id)
 );
 
 create index products_category_idx on public.products(category_id);
@@ -265,6 +281,7 @@ create index submission_rate_limits_updated_idx on public.submission_rate_limits
 create index admin_notifications_unread_idx on public.admin_notifications(is_read,created_at desc);
 create index site_visitors_first_seen_idx on public.site_visitors(first_seen_at desc);
 create index campus_wall_posts_status_created_idx on public.campus_wall_posts(status,is_pinned desc,created_at desc);
+create index campus_wall_reports_status_created_idx on public.campus_wall_reports(status,created_at desc);
 
 insert into public.site_settings(id,admin_wechat) values(true,'') on conflict (id) do nothing;
 
@@ -414,27 +431,70 @@ set search_path = public, pg_temp
 as $$
 declare v_post_id uuid;
 declare v_nickname text;
+declare v_content text;
 declare v_review_enabled boolean;
 declare v_filter_text text;
 begin
   if p_client_id is null then raise exception '浏览器标识缺失，请刷新页面后重试'; end if;
   v_nickname := coalesce(nullif(btrim(p_nickname),''),'匿名');
+  v_content := btrim(coalesce(p_content,''));
   if char_length(v_nickname) > 12 then raise exception '昵称最多 12 个文字'; end if;
-  if nullif(btrim(p_title),'') is null or char_length(btrim(p_title)) > 80 then raise exception '标题应为 1 至 80 个文字'; end if;
-  if nullif(btrim(p_content),'') is null or char_length(btrim(p_content)) > 3000 then raise exception '内容应为 1 至 3000 个文字'; end if;
-  v_filter_text := lower(regexp_replace(coalesce(p_title,'') || coalesce(p_content,''),'[[:space:][:punct:]]','','g'));
+  if char_length(v_content) < 1 or char_length(v_content) > 3000 then raise exception '内容应为 1 至 3000 个文字'; end if;
+  v_filter_text := lower(regexp_replace(v_nickname || v_content,'[[:space:][:punct:]]','','g'));
   if v_filter_text ~ '(傻逼|傻b|煞笔|沙币|草泥马|操你妈|艹你妈|妈的|cnm|nmsl|去死|垃圾人|狗东西|死全家|诈骗|刷单|网赌|赌博|博彩|毒品|卖淫|色情|裸聊|高利贷|办证|代开发票|枪支|炸药|fuck|shit|bitch)' then
     raise exception '投稿内容包含不适宜发布的词汇，请修改后再提交';
   end if;
   select wall_review_enabled into v_review_enabled from public.site_settings where id=true;
-  insert into public.campus_wall_posts(nickname,title,content,image_url,client_id,status,reviewed_at)
-  values(v_nickname,btrim(p_title),btrim(p_content),nullif(btrim(p_image_url),''),p_client_id,case when coalesce(v_review_enabled,true) then 'pending' else 'approved' end,case when coalesce(v_review_enabled,true) then null else now() end)
+  insert into public.campus_wall_posts(nickname,title,content,image_url,client_id,status,approval_source,reviewed_at)
+  values(v_nickname,left(v_content,80),v_content,nullif(btrim(p_image_url),''),p_client_id,case when coalesce(v_review_enabled,true) then 'pending' else 'approved' end,case when coalesce(v_review_enabled,true) then 'manual' else 'automatic' end,case when coalesce(v_review_enabled,true) then null else now() end)
   returning id into v_post_id;
   return v_post_id;
 end;
 $$;
 revoke all on function public.submit_campus_wall_post(text,text,text,text,uuid) from public;
 grant execute on function public.submit_campus_wall_post(text,text,text,text,uuid) to anon,authenticated;
+
+create or replace function public.update_own_campus_wall_post(p_post_id uuid,p_content text,p_client_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare v_content text := btrim(coalesce(p_content,''));
+declare v_filter_text text;
+begin
+  if p_post_id is null or p_client_id is null then raise exception '投稿标识缺失'; end if;
+  if char_length(v_content) < 1 or char_length(v_content) > 3000 then raise exception '内容应为 1 至 3000 个文字'; end if;
+  v_filter_text := lower(regexp_replace(v_content,'[[:space:][:punct:]]','','g'));
+  if v_filter_text ~ '(傻逼|傻b|煞笔|沙币|草泥马|操你妈|艹你妈|妈的|cnm|nmsl|去死|垃圾人|狗东西|死全家|诈骗|刷单|网赌|赌博|博彩|毒品|卖淫|色情|裸聊|高利贷|办证|代开发票|枪支|炸药|fuck|shit|bitch)' then raise exception '投稿内容包含不适宜发布的词汇，请修改后再提交'; end if;
+  update public.campus_wall_posts set title=left(v_content,80),content=v_content
+  where id=p_post_id and client_id=p_client_id and created_at>now()-interval '2 minutes' and status in ('pending','approved');
+  if not found then raise exception '已超过 2 分钟，无法编辑'; end if;
+end;
+$$;
+revoke all on function public.update_own_campus_wall_post(uuid,text,uuid) from public;
+grant execute on function public.update_own_campus_wall_post(uuid,text,uuid) to anon,authenticated;
+
+create or replace function public.submit_campus_wall_report(p_post_id uuid,p_reason text,p_client_id uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare v_report_id uuid; v_reason text := btrim(coalesce(p_reason,'')); v_summary text;
+begin
+  if p_post_id is null or p_client_id is null then raise exception '举报标识缺失'; end if;
+  if char_length(v_reason)<2 or char_length(v_reason)>500 then raise exception '举报问题应为 2 至 500 个文字'; end if;
+  select left(content,50) into v_summary from public.campus_wall_posts where id=p_post_id and status='approved';
+  if not found then raise exception '该投稿不存在或已下架'; end if;
+  insert into public.campus_wall_reports(post_id,reason,client_id) values(p_post_id,v_reason,p_client_id) returning id into v_report_id;
+  insert into public.admin_notifications(kind,reference_id,title,body) values('wall_report',v_report_id,'有新的投稿举报',v_summary);
+  return v_report_id;
+exception when unique_violation then raise exception '您已经举报过这条投稿，请等待管理员处理';
+end;
+$$;
+revoke all on function public.submit_campus_wall_report(uuid,text,uuid) from public;
+grant execute on function public.submit_campus_wall_report(uuid,text,uuid) to anon,authenticated;
 
 create or replace function public.admin_review_campus_wall_post(p_post_id uuid,p_action text)
 returns void
@@ -445,7 +505,7 @@ as $$
 begin
   if not public.is_admin() then raise exception '无权限'; end if;
   if p_action not in ('approved','rejected') then raise exception '无效审核操作'; end if;
-  update public.campus_wall_posts set status=p_action,is_pinned=case when p_action='approved' then is_pinned else false end,reviewed_at=now(),reviewed_by=auth.uid()
+  update public.campus_wall_posts set status=p_action,approval_source='manual',is_pinned=case when p_action='approved' then is_pinned else false end,reviewed_at=now(),reviewed_by=auth.uid()
   where id=p_post_id and status='pending';
   if not found then raise exception '投稿不存在或已经审核'; end if;
 end;
@@ -613,6 +673,7 @@ alter table public.submission_rate_limits enable row level security;
 alter table public.admin_notifications enable row level security;
 alter table public.site_visitors enable row level security;
 alter table public.campus_wall_posts enable row level security;
+alter table public.campus_wall_reports enable row level security;
 
 create policy profiles_admin_read on public.profiles for select to authenticated
   using ((select public.is_admin()) or id = (select auth.uid()));
@@ -682,6 +743,13 @@ create policy campus_wall_posts_admin_update on public.campus_wall_posts for upd
 create policy campus_wall_posts_admin_delete on public.campus_wall_posts for delete to authenticated
   using ((select public.is_admin()));
 
+create policy campus_wall_reports_admin_read on public.campus_wall_reports for select to authenticated
+  using ((select public.is_admin()));
+create policy campus_wall_reports_admin_update on public.campus_wall_reports for update to authenticated
+  using ((select public.is_admin())) with check ((select public.is_admin()));
+create policy campus_wall_reports_admin_delete on public.campus_wall_reports for delete to authenticated
+  using ((select public.is_admin()));
+
 -- 前台商品视图：隐藏交换微信，并汇总想要人数、库存和永久商品码。
 create view public.product_feed
 with (security_invoker = false)
@@ -720,7 +788,7 @@ with (security_invoker = false)
 as select id,nickname,title,content,image_url,is_pinned,created_at
 from public.campus_wall_posts where status='approved';
 
-revoke all on public.profiles,public.categories,public.hot_searches,public.site_settings,public.product_code_registry,public.products,public.reservations,public.product_submissions,public.submission_rate_limits,public.admin_notifications,public.site_visitors,public.campus_wall_posts from anon,authenticated;
+revoke all on public.profiles,public.categories,public.hot_searches,public.site_settings,public.product_code_registry,public.products,public.reservations,public.product_submissions,public.submission_rate_limits,public.admin_notifications,public.site_visitors,public.campus_wall_posts,public.campus_wall_reports from anon,authenticated;
 grant select on public.categories to anon,authenticated;
 grant select on public.hot_searches to anon,authenticated;
 grant select on public.product_feed to anon,authenticated;
@@ -730,6 +798,7 @@ grant select on public.products to authenticated;
 grant select on public.profiles,public.reservations,public.site_settings,public.product_code_registry to authenticated;
 grant select on public.site_visitors to authenticated;
 grant select,update,delete on public.campus_wall_posts to authenticated;
+grant select,update,delete on public.campus_wall_reports to authenticated;
 grant select,update,delete on public.product_submissions to authenticated;
 grant select,update,delete on public.admin_notifications to authenticated;
 grant insert,update,delete on public.categories,public.products to authenticated;
@@ -794,7 +863,7 @@ begin
   into v_storage_count,v_storage_bytes from storage.objects where bucket_id='product-images';
   select count(*) filter(where image_url is not null),count(*) filter(where image_url is not null and image_url not like '%/storage/v1/object/public/product-images/%')
   into v_product_images,v_external_images from (select image_url from public.products union all select image_url from public.product_submissions union all select image_url from public.campus_wall_posts) as images;
-  v_database_bytes := pg_total_relation_size('public.profiles'::regclass)+pg_total_relation_size('public.categories'::regclass)+pg_total_relation_size('public.hot_searches'::regclass)+pg_total_relation_size('public.products'::regclass)+pg_total_relation_size('public.product_submissions'::regclass)+pg_total_relation_size('public.submission_rate_limits'::regclass)+pg_total_relation_size('public.admin_notifications'::regclass)+pg_total_relation_size('public.site_visitors'::regclass)+pg_total_relation_size('public.reservations'::regclass)+pg_total_relation_size('public.product_code_registry'::regclass)+pg_total_relation_size('public.site_settings'::regclass)+pg_total_relation_size('public.campus_wall_posts'::regclass);
+  v_database_bytes := pg_total_relation_size('public.profiles'::regclass)+pg_total_relation_size('public.categories'::regclass)+pg_total_relation_size('public.hot_searches'::regclass)+pg_total_relation_size('public.products'::regclass)+pg_total_relation_size('public.product_submissions'::regclass)+pg_total_relation_size('public.submission_rate_limits'::regclass)+pg_total_relation_size('public.admin_notifications'::regclass)+pg_total_relation_size('public.site_visitors'::regclass)+pg_total_relation_size('public.reservations'::regclass)+pg_total_relation_size('public.product_code_registry'::regclass)+pg_total_relation_size('public.site_settings'::regclass)+pg_total_relation_size('public.campus_wall_posts'::regclass)+pg_total_relation_size('public.campus_wall_reports'::regclass);
   return jsonb_build_object('storage_image_count',v_storage_count,'storage_bytes',v_storage_bytes,'database_bytes',v_database_bytes,'total_bytes',v_storage_bytes+v_database_bytes,'product_image_count',v_product_images,'external_image_count',v_external_images,'measured_at',now());
 end;
 $$;
@@ -871,6 +940,9 @@ begin
   end if;
   if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='campus_wall_posts') then
     alter publication supabase_realtime add table public.campus_wall_posts;
+  end if;
+  if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='campus_wall_reports') then
+    alter publication supabase_realtime add table public.campus_wall_reports;
   end if;
 end $$;
 

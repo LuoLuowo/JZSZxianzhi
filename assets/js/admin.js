@@ -3,9 +3,9 @@ const SUPABASE_URL = 'https://znrnaeebnuadbxyqaild.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable__uNRNeHvjKIMfIIdhQod6Q_KVqpmE3F';
 const db = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 const $ = id => document.getElementById(id);
-const state = {user:null,view:'overview',search:'',products:[],submissions:[],wallPosts:[],wallError:null,reservations:[],notifications:[],codes:[],hotSearches:[],hotSearchError:null,admins:[],settings:{admin_wechat:'',announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:'',wall_review_enabled:true},resources:{},confirmAction:null,editingProduct:null,channel:null,presenceChannel:null,onlineCount:0,visitorCount:0};
+const state = {user:null,view:'overview',search:'',products:[],submissions:[],wallPosts:[],wallError:null,wallReports:[],wallReportError:null,reservations:[],notifications:[],codes:[],hotSearches:[],hotSearchError:null,admins:[],settings:{admin_wechat:'',announcement:'',hero_headline:'',hero_subtitle:'',introduction_content:'',introduction_image_url:'',wall_review_enabled:true},resources:{},confirmAction:null,editingProduct:null,channel:null,presenceChannel:null,onlineCount:0,visitorCount:0};
 const viewMeta = {
-  overview:['数据概览','查看平台实时运营数据'],products:['商品管理','查询商品、库存、交换微信和商品码'],submissions:['发布审核','审核普通用户提交的闲置'],campusWall:['投稿区审核','审核、置顶和管理投稿区内容'],
+  overview:['数据概览','查看平台实时运营数据'],products:['商品管理','查询商品、库存、交换微信和商品码'],submissions:['发布审核','审核普通用户提交的闲置'],campusWall:['投稿区审核','审核、置顶和管理投稿区内容'],wallReports:['举报反馈','查看并处理用户提交的投稿举报'],
   reservations:['想要记录','查询交换微信并处理成交'],codes:['商品码查询','查询当前和历史商品码'],
   resources:['资源占用','查看图片、Storage 和数据库实时占用'],categories:['分类管理','维护前台商品分类'],hotSearches:['热搜管理','添加、排序、启用或删除首页近期热搜'],admins:['管理员管理','授权其他管理员共同管理网站']
 };
@@ -89,7 +89,8 @@ async function refreshData() {
     db.rpc('admin_resource_usage'),
     db.rpc('admin_visitor_count'),
     db.from('hot_searches').select('*').order('sort_order').order('id'),
-    db.from('campus_wall_posts').select('*').order('is_pinned',{ascending:false}).order('created_at',{ascending:false})
+    db.from('campus_wall_posts').select('*').order('is_pinned',{ascending:false}).order('created_at',{ascending:false}),
+    db.from('campus_wall_reports').select('*,campus_wall_posts(nickname,content,image_url)').order('created_at',{ascending:false})
   ]);
   const failed=results.slice(0,10).find(result=>result.error);
   if (failed) { $('adminPageContent').innerHTML=`<div class="empty show"><div class="empty-icon">!</div><div class="empty-title">后台数据加载失败</div><div>${esc(errorText(failed.error))}</div></div>`; return; }
@@ -101,6 +102,8 @@ async function refreshData() {
   state.hotSearchError=results[10].error || null;
   state.wallPosts=results[11].data || [];
   state.wallError=results[11].error || null;
+  state.wallReports=results[12].data || [];
+  state.wallReportError=results[12].error || null;
   state.products.sort((a,b)=>Number(a.status==='sold')-Number(b.status==='sold'));
   renderUnreadBadges();
   render();
@@ -110,25 +113,27 @@ function setView(view) {
   state.view=view; state.search=''; $('adminSearch').value='';
   document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button.dataset.view===view));
   $('viewTitle').textContent=viewMeta[view][0]; $('viewDescription').textContent=viewMeta[view][1];
-  const hints={overview:'概览无需查询',products:'商品名、商品码、交换微信',submissions:'商品名、交换微信、分类或审核状态',campusWall:'昵称、标题、内容或审核状态',reservations:'商品、商品码、称呼、交换微信',codes:'输入五位商品码或商品名',resources:'图片标题或 URL',categories:'分类名称',hotSearches:'热搜关键词',admins:'管理员邮箱或昵称'};
+  const hints={overview:'概览无需查询',products:'商品名、商品码、交换微信',submissions:'商品名、交换微信、分类或审核状态',campusWall:'昵称、内容或审核状态',wallReports:'投稿内容、举报问题或处理状态',reservations:'商品、商品码、称呼、交换微信',codes:'输入五位商品码或商品名',resources:'图片标题或 URL',categories:'分类名称',hotSearches:'热搜关键词',admins:'管理员邮箱或昵称'};
   $('adminSearch').placeholder=hints[view]; $('adminSearch').disabled=view==='overview'; $('adminSearchButton').disabled=view==='overview'; render();
   if(view==='submissions')void markNotificationsRead('submission');
   if(view==='campusWall')void markNotificationsRead('campus_wall');
+  if(view==='wallReports')void markNotificationsRead('wall_report');
   if(view==='reservations')void markNotificationsRead('reservation');
 }
 
-function renderUnreadBadges(){for(const [kind,id] of [['submission','unreadSubmissionsBadge'],['campus_wall','unreadWallBadge'],['reservation','unreadReservationsBadge']]){const badge=$(id);const count=state.notifications.filter(item=>item.kind===kind&&!item.is_read).length;badge.hidden=!count;badge.textContent=count>99?'99+':String(count);}}
+function renderUnreadBadges(){for(const [kind,id] of [['submission','unreadSubmissionsBadge'],['campus_wall','unreadWallBadge'],['wall_report','unreadWallReportsBadge'],['reservation','unreadReservationsBadge']]){const badge=$(id);if(!badge)continue;const count=state.notifications.filter(item=>item.kind===kind&&!item.is_read).length;badge.hidden=!count;badge.textContent=count>99?'99+':String(count);}}
 async function markNotificationsRead(kind){const unread=state.notifications.filter(item=>item.kind===kind&&!item.is_read);if(!unread.length)return;const ids=unread.map(item=>item.id);const now=new Date().toISOString();const {error}=await db.from('admin_notifications').update({is_read:true,read_at:now}).in('id',ids);if(error)return;state.notifications=state.notifications.map(item=>ids.includes(item.id)?{...item,is_read:true,read_at:now}:item);renderUnreadBadges();}
 function updateDesktopNotificationButton(){const button=$('desktopNotificationButton');if(!('Notification'in window)){button.hidden=true;return;}button.hidden=false;button.textContent=Notification.permission==='granted'?'🔔 电脑通知已开启':'🔔 开启电脑通知';}
 async function requestDesktopNotifications(){if(!('Notification'in window))return toast('当前浏览器不支持电脑通知',false);if(Notification.permission==='denied')return toast('浏览器已拒绝通知，请在地址栏的网站权限中改为允许',false);const permission=await Notification.requestPermission();updateDesktopNotificationButton();toast(permission==='granted'?'电脑通知已开启':'未获得通知权限',permission==='granted');}
-function showDesktopNotification(item){if(!('Notification'in window)||Notification.permission!=='granted')return;try{const notification=new Notification(`焦专好物平台 · ${item.title}`,{body:item.body||'请进入后台查看',icon:'assets/images/site-mark.webp',tag:`admin-notification-${item.id}`});notification.onclick=()=>{window.focus();setView(item.kind==='submission'?'submissions':item.kind==='campus_wall'?'campusWall':'reservations');notification.close();};}catch{}}
-function handleNotificationChange(payload){if(payload.eventType!=='INSERT')return;const item=payload.new;if(!state.notifications.some(notification=>notification.id===item.id))state.notifications.unshift(item);renderUnreadBadges();showDesktopNotification(item);if((item.kind==='submission'&&state.view==='submissions')||(item.kind==='campus_wall'&&state.view==='campusWall')||(item.kind==='reservation'&&state.view==='reservations'))void markNotificationsRead(item.kind);}
+function showDesktopNotification(item){if(!('Notification'in window)||Notification.permission!=='granted')return;try{const notification=new Notification(`焦专好物平台 · ${item.title}`,{body:item.body||'请进入后台查看',icon:'assets/images/site-mark.webp',tag:`admin-notification-${item.id}`});notification.onclick=()=>{window.focus();setView(item.kind==='submission'?'submissions':item.kind==='campus_wall'?'campusWall':item.kind==='wall_report'?'wallReports':'reservations');notification.close();};}catch{}}
+function handleNotificationChange(payload){if(payload.eventType!=='INSERT')return;const item=payload.new;if(!state.notifications.some(notification=>notification.id===item.id))state.notifications.unshift(item);renderUnreadBadges();showDesktopNotification(item);if((item.kind==='submission'&&state.view==='submissions')||(item.kind==='campus_wall'&&state.view==='campusWall')||(item.kind==='wall_report'&&state.view==='wallReports')||(item.kind==='reservation'&&state.view==='reservations'))void markNotificationsRead(item.kind);}
 
 function render() {
   if (state.view==='overview') return renderOverview();
   if (state.view==='products') return renderProducts();
   if (state.view==='submissions') return renderSubmissions();
   if (state.view==='campusWall') return renderCampusWall();
+  if (state.view==='wallReports') return renderWallReports();
   if (state.view==='reservations') return renderReservations();
   if (state.view==='codes') return renderCodes();
   if (state.view==='resources') return renderResources();
@@ -167,8 +172,15 @@ function renderSubmissions() {
 function renderCampusWall() {
   if(state.wallError){$('adminPageContent').innerHTML='<div class="empty show"><div class="empty-icon">!</div><div class="empty-title">投稿区数据库尚未升级</div><div>请先执行 supabase/upgrade-campus-wall-and-exchange.sql</div></div>';return;}
   const labels={pending:'待审核',approved:'已通过',rejected:'已拒绝'};
-  const data=filtered(state.wallPosts,item=>[item.nickname,item.title,item.content,item.status,item.is_pinned?'置顶':'']);
-  $('adminPageContent').innerHTML=`<div class="toolbar-row"><div><strong>投稿区审核模式</strong><div class="hint">开启后投稿进入审核列表；关闭后符合规则的投稿会直接发布。</div></div><div class="actions"><button class="btn ${state.settings.wall_review_enabled!==false?'btn-primary':'btn-ghost'}" type="button" data-wall-review-mode="true">开启审核模式</button><button class="btn ${state.settings.wall_review_enabled===false?'btn-primary':'btn-ghost'}" type="button" data-wall-review-mode="false">关闭审核模式</button></div></div>`+table(['照片','昵称 / 投稿内容','状态 / 时间','置顶','操作'],data.map(item=>`<tr><td>${item.image_url?`<img class="wall-admin-image" src="${esc(item.image_url)}" alt="${esc(item.title)}">`:'—'}</td><td><strong>${esc(item.nickname)} · ${esc(item.title)}</strong><div class="wall-admin-content">${esc(item.content)}</div></td><td>${labels[item.status]||item.status}<br><span class="hint">${dateText(item.created_at)}</span></td><td>${item.is_pinned?'🔝 已置顶':'普通'}</td><td><div class="actions">${item.status==='pending'?`<button class="btn btn-primary btn-small" data-review-wall="${item.id}" data-wall-action="approved">同意发布</button><button class="btn btn-danger btn-small" data-review-wall="${item.id}" data-wall-action="rejected">拒绝</button>`:''}${item.status==='approved'?`<button class="btn btn-ghost btn-small" data-pin-wall="${item.id}" data-pin-value="${item.is_pinned?'false':'true'}">${item.is_pinned?'取消置顶':'🔝 置顶'}</button>`:''}<button class="btn btn-danger btn-small" data-delete-wall="${item.id}">删除</button></div></td></tr>`).join(''));
+  const data=filtered(state.wallPosts,item=>[item.nickname,item.content,item.status,item.approval_source,item.is_pinned?'置顶':'']);
+  $('adminPageContent').innerHTML=`<div class="toolbar-row"><div><strong>投稿区审核模式</strong><div class="hint">开启后投稿进入审核列表；关闭后符合规则的投稿会直接发布。</div></div><div class="actions"><button class="btn ${state.settings.wall_review_enabled!==false?'btn-primary':'btn-ghost'}" type="button" data-wall-review-mode="true">开启审核模式</button><button class="btn ${state.settings.wall_review_enabled===false?'btn-primary':'btn-ghost'}" type="button" data-wall-review-mode="false">关闭审核模式</button></div></div>`+table(['照片','昵称 / 投稿内容','状态 / 时间','置顶','操作'],data.map(item=>{const statusLabel=item.status==='approved'&&item.approval_source==='automatic'?'自动通过':labels[item.status]||item.status;return `<tr><td>${item.image_url?`<img class="wall-admin-image" src="${esc(item.image_url)}" alt="投稿图片">`:'—'}</td><td><strong>${esc(item.nickname)}</strong><div class="wall-admin-content">${esc(item.content)}</div></td><td>${statusLabel}<br><span class="hint">${dateText(item.created_at)}</span></td><td>${item.is_pinned?'🔝 已置顶':'普通'}</td><td><div class="actions">${item.status==='pending'?`<button class="btn btn-primary btn-small" data-review-wall="${item.id}" data-wall-action="approved">同意发布</button><button class="btn btn-danger btn-small" data-review-wall="${item.id}" data-wall-action="rejected">拒绝</button>`:''}${item.status==='approved'?`<button class="btn btn-ghost btn-small" data-pin-wall="${item.id}" data-pin-value="${item.is_pinned?'false':'true'}">${item.is_pinned?'取消置顶':'🔝 置顶'}</button>`:''}<button class="btn btn-danger btn-small" data-delete-wall="${item.id}">删除</button></div></td></tr>`}).join(''));
+}
+
+function renderWallReports(){
+  if(state.wallReportError){$('adminPageContent').innerHTML='<div class="empty show"><div class="empty-icon">!</div><div class="empty-title">举报功能数据库尚未升级</div><div>请先执行 supabase/upgrade-wall-post-tools.sql</div></div>';return;}
+  const labels={pending:'待处理',handled:'已处理'};
+  const data=filtered(state.wallReports,item=>[item.reason,item.status,item.campus_wall_posts?.nickname,item.campus_wall_posts?.content]);
+  $('adminPageContent').innerHTML=table(['投稿内容','举报问题','状态 / 时间','操作'],data.map(item=>`<tr><td><strong>${esc(item.campus_wall_posts?.nickname||'投稿已删除')}</strong><div class="wall-admin-content">${esc(item.campus_wall_posts?.content||'原投稿已不存在')}</div>${item.campus_wall_posts?.image_url?`<img class="wall-admin-image" src="${esc(item.campus_wall_posts.image_url)}" alt="投稿图片">`:''}</td><td>${esc(item.reason)}</td><td>${labels[item.status]||item.status}<br><span class="hint">${dateText(item.created_at)}</span></td><td><div class="actions">${item.status==='pending'?`<button class="btn btn-primary btn-small" data-handle-wall-report="${item.id}">标记已处理</button>`:''}<button class="btn btn-danger btn-small" data-delete-wall-report="${item.id}">删除反馈</button></div></td></tr>`).join(''));
 }
 
 function reservationTable(records,actions=true) {
@@ -325,6 +337,8 @@ async function deleteRejectedSubmission(id) {const submission=state.submissions.
 async function reviewWallPost(id,action){const {error}=await db.rpc('admin_review_campus_wall_post',{p_post_id:id,p_action:action});if(error)return toast(errorText(error),false);toast(action==='approved'?'投稿区内容已发布':'投稿区内容已拒绝');await refreshData();}
 async function setWallPinned(id,value){const {error}=await db.from('campus_wall_posts').update({is_pinned:value}).eq('id',id).eq('status','approved');if(error)return toast(errorText(error),false);toast(value?'投稿区内容已置顶':'已取消置顶');await refreshData();}
 async function deleteWallPost(id){const item=state.wallPosts.find(post=>post.id===id);const {error}=await db.from('campus_wall_posts').delete().eq('id',id);if(error)return toast(errorText(error),false);const path=storagePath(item?.image_url);if(path?.startsWith('wall-submissions/'))await db.storage.from('product-images').remove([path]);toast('投稿区内容已删除');await refreshData();}
+async function handleWallReport(id){const {error}=await db.from('campus_wall_reports').update({status:'handled',handled_at:new Date().toISOString(),handled_by:state.user.id}).eq('id',id);if(error)return toast(errorText(error),false);toast('举报反馈已标记为处理');await refreshData();}
+async function deleteWallReport(id){const {error}=await db.from('campus_wall_reports').delete().eq('id',id);if(error)return toast(errorText(error),false);toast('举报反馈已删除');await refreshData();}
 
 function bindEvents() {
   $('adminPageLoginForm').addEventListener('submit',login); $('adminPageLogout').addEventListener('click',logout);
@@ -358,6 +372,10 @@ function bindEvents() {
     if(wallPin){const value=wallPin.dataset.pinValue==='true';const item=state.wallPosts.find(post=>post.id===wallPin.dataset.pinWall);return askConfirm(value?'置顶投稿区内容':'取消内容置顶',`确定${value?'置顶':'取消置顶'}“${item?.title||'该投稿'}”吗？`,value?'确认置顶':'取消置顶',()=>setWallPinned(wallPin.dataset.pinWall,value),value);}
     const wallDelete=target.closest('[data-delete-wall]');
     if(wallDelete){const item=state.wallPosts.find(post=>post.id===wallDelete.dataset.deleteWall);return askConfirm('删除投稿区内容',`确定永久删除“${item?.title||'该投稿'}”吗？图片也会一并清理，此操作无法恢复。`,'永久删除',()=>deleteWallPost(wallDelete.dataset.deleteWall));}
+    const handleReport=target.closest('[data-handle-wall-report]');
+    if(handleReport)return askConfirm('确认处理举报','确定已核实并处理这条举报反馈吗？','标记已处理',()=>handleWallReport(handleReport.dataset.handleWallReport),true);
+    const deleteReport=target.closest('[data-delete-wall-report]');
+    if(deleteReport)return askConfirm('删除举报反馈','确定永久删除这条举报反馈吗？此操作无法恢复。','永久删除',()=>deleteWallReport(deleteReport.dataset.deleteWallReport));
     if(target.dataset.productStatus){const product=state.products.find(p=>p.id===target.dataset.id);const label={sold:'标记售罄',removed:'下架',available:'重新上架'}[target.dataset.productStatus];return askConfirm('确认商品操作',`确定要将“${product?.title||'该商品'}”${label}吗？`,label,()=>setProductStatus(target.dataset.id,target.dataset.productStatus),target.dataset.productStatus==='available');}
     if(target.dataset.deleteProduct){const product=state.products.find(p=>p.id===target.dataset.deleteProduct);return askConfirm('永久删除商品',`确定删除“${product?.title||'该商品'}”吗？商品数据无法恢复，但五位商品码会永久保留且永不再次使用。`,'永久删除',()=>deleteProduct(target.dataset.deleteProduct));}
     if(target.dataset.reservationStatus){const text=target.dataset.reservationStatus==='confirmed'?'确认成交将扣减一件库存。':'取消表示买家无购买意向，该记录会直接删除且无法恢复。';return askConfirm('确认处理想要记录',text,target.dataset.reservationStatus==='confirmed'?'确认成交':'取消并删除',()=>setReservationStatus(target.dataset.id,target.dataset.reservationStatus),target.dataset.reservationStatus==='confirmed');}
@@ -370,7 +388,7 @@ function bindEvents() {
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&$('adminProductModal').classList.contains('open'))closeProductEditor();});
 }
 
-function subscribeRealtime() { if(state.channel)return;state.channel=db.channel('admin-dashboard').on('postgres_changes',{event:'*',schema:'public',table:'products'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'product_submissions'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'campus_wall_posts'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'reservations'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'admin_notifications'},handleNotificationChange).on('postgres_changes',{event:'*',schema:'public',table:'categories'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'hot_searches'},refreshData).on('postgres_changes',{event:'INSERT',schema:'public',table:'site_visitors'},refreshData).subscribe(); }
+function subscribeRealtime() { if(state.channel)return;state.channel=db.channel('admin-dashboard').on('postgres_changes',{event:'*',schema:'public',table:'products'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'product_submissions'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'campus_wall_posts'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'campus_wall_reports'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'reservations'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'admin_notifications'},handleNotificationChange).on('postgres_changes',{event:'*',schema:'public',table:'categories'},refreshData).on('postgres_changes',{event:'*',schema:'public',table:'hot_searches'},refreshData).on('postgres_changes',{event:'INSERT',schema:'public',table:'site_visitors'},refreshData).subscribe(); }
 function subscribePresence(){if(state.presenceChannel)return;state.presenceChannel=db.channel('site-online',{config:{presence:{key:browserClientId()}}}).on('presence',{event:'sync'},()=>{state.onlineCount=Object.keys(state.presenceChannel.presenceState()).length;if(state.view==='overview'&&!$('adminShell').hidden)renderOverview();}).subscribe(status=>{if(status==='SUBSCRIBED')state.presenceChannel.track({online_at:new Date().toISOString()});});}
 function updateEditProductPriceInput(){const mode=$('editProductPriceType').value;const input=$('editProductPrice');input.disabled=false;input.required=mode!=='negotiable';input.placeholder=mode==='negotiable'?'可填写大致价格，用于价格排序':'';$('editProductPriceLabel').textContent=mode==='at_most'?'最高价格（元）':mode==='negotiable'?'大致价格（可选）':'价格（元）';}
 

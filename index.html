@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://znrnaeebnuadbxyqaild.supabase.co" crossorigin>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="icon" type="image/webp" href="assets/images/site-mark.webp">
-  <link rel="stylesheet" href="assets/css/style.css?v=4">
+  <link rel="stylesheet" href="assets/css/style.css?v=5">
 </head>
 <body>
   <div class="notice" id="notice"></div>
@@ -85,7 +85,7 @@
       <nav class="pagination" id="pagination" aria-label="商品分页" hidden></nav>
     </section>
     <section class="campus-wall-view" id="campusWallView" hidden>
-      <div class="campus-wall-notice"><strong>这里是焦大师专投稿区</strong><span>随心投稿任何校内事情，最多可以添加一张照片。</span></div>
+      <div class="campus-wall-notice"><strong>这里是焦大师专投稿区</strong><span>随心投稿任何校内事情。</span></div>
       <div class="campus-wall-toolbar"><span>分享校园新鲜事、失物招领、学习互助和日常见闻。</span><button class="btn btn-primary" id="openWallSubmission" type="button">＋ 投稿</button></div>
       <div class="wall-feed" id="wallFeed"></div>
       <div class="loading" id="wallLoading">正在获取投稿区内容…</div>
@@ -95,8 +95,10 @@
     <p class="global-trade-warning">⚠️ 所有交易请谨防被骗，本平台不承担任何责任。</p>
   </main>
 
-  <div class="modal-backdrop" id="wallSubmissionModal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="wallSubmissionTitle"><div class="modal-head"><h3 class="modal-title" id="wallSubmissionTitle">投稿区投稿</h3><button class="close-btn" data-close="wallSubmissionModal">×</button></div><div class="modal-body"><div class="submission-warning" id="wallSubmissionWarning">⚠️ 为防止骗子及违规内容，投稿需要审核通过后展示。</div><form id="wallSubmissionForm"><div class="field-group"><label class="label" for="wallNickname">昵称（可选）</label><input class="field" id="wallNickname" maxlength="12" placeholder="不填写则默认匿名"></div><div class="field-group"><label class="label" for="wallTitle">标题</label><input class="field" id="wallTitle" maxlength="80" required placeholder="一句话概括投稿内容"></div><div class="field-group"><label class="label" for="wallContent">内容</label><textarea class="field wall-content-input" id="wallContent" maxlength="3000" required placeholder="填写想分享的校内事情"></textarea></div><div class="field-group"><label class="label" for="wallImage">照片（可选，最多一张）</label><input class="field" id="wallImage" type="file" accept="image/*"><div class="hint" id="wallImageHint">只能添加一张照片，上传前会自动压缩为 WebP。</div></div><div class="error" id="wallSubmissionError"></div><button class="submit" id="wallSubmissionSubmit" type="submit">提交审核</button></form></div></section></div>
+  <div class="modal-backdrop" id="wallSubmissionModal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="wallSubmissionTitle"><div class="modal-head"><h3 class="modal-title" id="wallSubmissionTitle">投稿区投稿</h3><button class="close-btn" data-close="wallSubmissionModal">×</button></div><div class="modal-body"><div class="submission-warning" id="wallSubmissionWarning">⚠️ 为防止骗子及违规内容，投稿需要审核通过后展示。</div><form id="wallSubmissionForm"><div class="field-group"><label class="label" for="wallNickname">昵称（可选）</label><input class="field" id="wallNickname" maxlength="12" placeholder="不填写则默认匿名"></div><div class="field-group"><label class="label" for="wallContent">内容</label><textarea class="field wall-content-input" id="wallContent" maxlength="3000" required placeholder="填写想分享的校内事情"></textarea></div><div class="field-group"><label class="label" for="wallImage">照片（可选，最多一张）</label><input class="field" id="wallImage" type="file" accept="image/*"><div class="hint" id="wallImageHint">只能添加一张照片，上传前会自动压缩为 WebP。</div></div><div class="error" id="wallSubmissionError"></div><button class="submit" id="wallSubmissionSubmit" type="submit">提交审核</button></form></div></section></div>
   <div class="modal-backdrop" id="wallSubmissionResultModal"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><h3 class="modal-title">投稿成功</h3><button class="close-btn" data-close="wallSubmissionResultModal">×</button></div><div class="modal-body submission-result"><div class="empty-icon">✅</div><p id="wallSubmissionResultText">投稿成功，审核员近期审核速度 6 分钟以内。</p><p id="wallSubmissionResultHint">注意：为防止骗子等内容，需要审核通过后才会展示。</p><button class="btn btn-primary" type="button" data-close="wallSubmissionResultModal">知道了</button></div></section></div>
+  <div class="modal-backdrop" id="wallReportModal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="wallReportTitle"><div class="modal-head"><h3 class="modal-title" id="wallReportTitle">举报该投稿</h3><button class="close-btn" data-close="wallReportModal">×</button></div><div class="modal-body"><p class="hint">请说明存在的问题，管理员会在后台核实处理。</p><form id="wallReportForm"><div class="field-group"><label class="label" for="wallReportReason">举报问题</label><textarea class="field" id="wallReportReason" minlength="2" maxlength="500" required placeholder="例如：疑似诈骗、辱骂或发布违规信息"></textarea></div><div class="error" id="wallReportError"></div><button class="submit" id="wallReportSubmit" type="submit">提交举报</button></form></div></section></div>
+  <div class="modal-backdrop" id="wallEditModal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="wallEditTitle"><div class="modal-head"><h3 class="modal-title" id="wallEditTitle">编辑投稿</h3><button class="close-btn" data-close="wallEditModal">×</button></div><div class="modal-body"><div class="submission-warning">投稿发布后 2 分钟内可以修改内容。</div><form id="wallEditForm"><div class="field-group"><label class="label" for="wallEditContent">内容</label><textarea class="field wall-content-input" id="wallEditContent" maxlength="3000" required></textarea></div><div class="error" id="wallEditError"></div><button class="submit" id="wallEditSubmit" type="submit">保存修改</button></form></div></section></div>
 
   <div class="modal-backdrop" id="adminLoginModal">
     <section class="modal" role="dialog" aria-modal="true" aria-labelledby="adminLoginTitle">
@@ -184,6 +186,6 @@
   <div class="toast" id="toast" role="status"><span class="toast-icon" id="toastIcon">✓</span><span id="toastText">操作成功</span></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0"></script>
-  <script src="assets/js/app.js?v=4"></script>
+  <script src="assets/js/app.js?v=5"></script>
 </body>
 </html>

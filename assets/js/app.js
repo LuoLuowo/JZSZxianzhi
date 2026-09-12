@@ -2,6 +2,7 @@
 const SUPABASE_URL = 'https://znrnaeebnuadbxyqaild.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable__uNRNeHvjKIMfIIdhQod6Q_KVqpmE3F';
 const PRODUCT_CACHE_KEY = 'jzsf-home-products-v2';
+const WALL_OWN_POSTS_KEY = 'jzzhw-own-wall-posts-v1';
 
 const state = {
   client: null,
@@ -24,6 +25,8 @@ const state = {
   wallPageSize: 10,
   totalWallPosts: 0,
   wallLoaded: false,
+  reportingWallPost: null,
+  editingWallPost: null,
   reserveProduct: null,
   adminView: 'overview',
   editingProduct: null,
@@ -58,6 +61,26 @@ function hasBlockedWallContent(...values) {
   const text=values.join('').replace(/[\s\p{P}\p{S}]/gu,'').toLowerCase();
   return WALL_BLOCKED_WORDS.test(text);
 }
+
+function ownWallPosts() {
+  let records={};
+  try{records=JSON.parse(localStorage.getItem(WALL_OWN_POSTS_KEY)||'{}')||{};}catch{}
+  const now=Date.now();let changed=false;
+  for(const [id,expiresAt] of Object.entries(records)){if(Number(expiresAt)<=now){delete records[id];changed=true;}}
+  if(changed)localStorage.setItem(WALL_OWN_POSTS_KEY,JSON.stringify(records));
+  return records;
+}
+
+function rememberOwnWallPost(id) {
+  if(!id)return;
+  const records=ownWallPosts();records[id]=Date.now()+120000;
+  localStorage.setItem(WALL_OWN_POSTS_KEY,JSON.stringify(records));
+  scheduleWallEditExpiry();
+}
+
+function canEditWallPost(id) {return Number(ownWallPosts()[id]||0)>Date.now();}
+let wallEditExpiryTimer;
+function scheduleWallEditExpiry(){clearTimeout(wallEditExpiryTimer);const expiries=Object.values(ownWallPosts()).map(Number).filter(value=>value>Date.now());if(!expiries.length)return;wallEditExpiryTimer=setTimeout(()=>{renderWallPosts();scheduleWallEditExpiry();},Math.max(100,Math.min(...expiries)-Date.now()+50));}
 
 function money(value) {
   return Number(value).toLocaleString('zh-CN',{minimumFractionDigits:Number(value)%1?2:0,maximumFractionDigits:2});
@@ -468,9 +491,10 @@ async function loadWallPosts() {
 function renderWallPosts() {
   $('wallFeed').innerHTML=state.wallPosts.map(post=>`<article class="wall-post">
     <div class="wall-post-profile" aria-label="投稿人：${escapeHtml(post.nickname)}">${wallAvatar(post.nickname)}<div class="wall-post-author">${escapeHtml(post.nickname)}</div></div>
-    <div class="wall-post-main"><div class="wall-post-head">${post.is_pinned?'<span class="wall-pin">🔝 置顶</span>':''}<h3>${escapeHtml(post.title)}</h3></div><div class="wall-post-content">${escapeHtml(post.content)}</div>${post.image_url?`<img class="wall-post-image" src="${escapeHtml(post.image_url)}" alt="${escapeHtml(post.title)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">`:''}<time>${new Date(post.created_at).toLocaleString('zh-CN')}</time></div>
+    <div class="wall-post-main"><button class="wall-report-button" type="button" data-report-wall="${post.id}">举报</button><div class="wall-post-content">${post.is_pinned?'<span class="wall-pin">🔝 置顶</span>':''}${escapeHtml(post.content)}</div>${post.image_url?`<img class="wall-post-image" src="${escapeHtml(post.image_url)}" alt="投稿图片" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-wall-image="${escapeHtml(post.image_url)}" onerror="this.remove()">`:''}<div class="wall-post-footer">${canEditWallPost(post.id)?`<button class="wall-edit-button" type="button" data-edit-wall="${post.id}">编辑</button>`:'<span></span>'}<time>${new Date(post.created_at).toLocaleString('zh-CN')}</time></div></div>
   </article>`).join('');
   $('wallEmpty').classList.toggle('show',!state.wallPosts.length);
+  scheduleWallEditExpiry();
 }
 
 function renderWallPagination() {
@@ -505,19 +529,26 @@ async function uploadWallImage(file){
 
 async function submitWallPost(event){
   event.preventDefault();
-  const button=$('wallSubmissionSubmit'),file=$('wallImage').files[0];let uploaded=null;
+  const button=$('wallSubmissionSubmit'),file=$('wallImage').files[0],content=$('wallContent').value.trim();let uploaded=null;
   $('wallSubmissionError').textContent='';busy(button,true,file?'处理照片中…':'提交中…');
   try{
-    if(hasBlockedWallContent($('wallTitle').value,$('wallContent').value))throw new Error('投稿内容包含不适宜发布的词汇，请修改后再提交');
+    if(hasBlockedWallContent(content))throw new Error('投稿内容包含不适宜发布的词汇，请修改后再提交');
     if(file)uploaded=await uploadWallImage(file);
-    const {error}=await state.client.rpc('submit_campus_wall_post',{p_nickname:$('wallNickname').value.trim(),p_title:$('wallTitle').value.trim(),p_content:$('wallContent').value.trim(),p_image_url:uploaded?.url||null,p_client_id:browserClientId()});
+    const {data,error}=await state.client.rpc('submit_campus_wall_post',{p_nickname:$('wallNickname').value.trim(),p_title:content.slice(0,80),p_content:content,p_image_url:uploaded?.url||null,p_client_id:browserClientId()});
     if(error)throw error;
+    rememberOwnWallPost(data);
     closeModal('wallSubmissionModal');
     if(!wallReviewEnabled()){state.wallLoaded=false;if(state.homeView==='wall')await loadWallPosts();}
     openModal('wallSubmissionResultModal');
   }catch(error){if(uploaded?.path)await state.client.storage.from('product-images').remove([uploaded.path]);$('wallSubmissionError').textContent=friendlyError(error);}
   finally{busy(button,false);}
 }
+
+function openWallReport(post){if(!post)return;state.reportingWallPost=post;$('wallReportForm').reset();$('wallReportError').textContent='';openModal('wallReportModal');}
+async function submitWallReport(event){event.preventDefault();const button=$('wallReportSubmit');$('wallReportError').textContent='';busy(button,true,'提交中…');try{const {error}=await state.client.rpc('submit_campus_wall_report',{p_post_id:state.reportingWallPost?.id,p_reason:$('wallReportReason').value.trim(),p_client_id:browserClientId()});if(error)throw error;closeModal('wallReportModal');state.reportingWallPost=null;toast('举报已提交，管理员会尽快核实');}catch(error){$('wallReportError').textContent=friendlyError(error);}finally{busy(button,false);}}
+
+function openWallEditor(post){if(!post)return;if(!canEditWallPost(post.id))return toast('已超过 2 分钟，无法编辑',false);state.editingWallPost=post;$('wallEditContent').value=post.content||'';$('wallEditError').textContent='';openModal('wallEditModal');}
+async function submitWallEdit(event){event.preventDefault();const button=$('wallEditSubmit'),content=$('wallEditContent').value.trim();$('wallEditError').textContent='';busy(button,true,'保存中…');try{if(hasBlockedWallContent(content))throw new Error('投稿内容包含不适宜发布的词汇，请修改后再提交');const {error}=await state.client.rpc('update_own_campus_wall_post',{p_post_id:state.editingWallPost?.id,p_content:content,p_client_id:browserClientId()});if(error)throw error;closeModal('wallEditModal');state.editingWallPost=null;toast('投稿内容已更新');await loadWallPosts();}catch(error){$('wallEditError').textContent=friendlyError(error);}finally{busy(button,false);}}
 
 function showEmpty(icon,title,text) {
   $('emptyIcon').textContent = icon;
@@ -1154,6 +1185,9 @@ function bindEvents() {
   $('copyExchangeWechat').addEventListener('click',copyExchangeWechat);
   $('openWallSubmission').addEventListener('click',openWallSubmissionForm);
   $('wallSubmissionForm').addEventListener('submit',submitWallPost);
+  $('wallReportForm').addEventListener('submit',submitWallReport);
+  $('wallEditForm').addEventListener('submit',submitWallEdit);
+  $('wallFeed').addEventListener('click',event=>{const image=event.target.closest('[data-wall-image]');if(image)return openImageLightbox(image.dataset.wallImage,'投稿图片');const report=event.target.closest('[data-report-wall]');if(report)return openWallReport(state.wallPosts.find(post=>post.id===report.dataset.reportWall));const edit=event.target.closest('[data-edit-wall]');if(edit)return openWallEditor(state.wallPosts.find(post=>post.id===edit.dataset.editWall));});
   $('wallPagination').addEventListener('click',event=>{const button=event.target.closest('[data-wall-page]');if(!button||button.disabled)return;state.wallPage=Number(button.dataset.wallPage);loadWallPosts().then(()=>document.querySelector('.section-head').scrollIntoView({behavior:'smooth',block:'start'}));});
   $('productForm').addEventListener('submit',submitProduct);
   $('productPriceType').addEventListener('change',updateProductPriceInput);
@@ -1248,7 +1282,7 @@ async function init() {
   }
   state.client = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
   window.supabaseClient = state.client;
-  if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js?v=4').catch(()=>{}),{once:true});
+  if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js?v=5').catch(()=>{}),{once:true});
   // 每个浏览器标识仅会在数据库中写入一次；失败不影响正常浏览商品。
   Promise.resolve(state.client.rpc('track_site_visitor',{p_client_id:browserClientId()})).catch(()=>{});
   subscribePresence();

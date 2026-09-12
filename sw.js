@@ -1,4 +1,4 @@
-const STATIC_CACHE='jzzhw-static-v6';
+const STATIC_CACHE='jzzhw-static-v7';
 const IMAGE_CACHE='jzzhw-images-v1';
 const STATIC_ASSETS=['/','/index.html','/admin.html','/assets/css/style.css','/assets/css/admin.css','/assets/js/app.js','/assets/js/admin.js','/assets/images/site-logo.webp','/assets/images/site-mark.webp'];
 

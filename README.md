@@ -64,6 +64,8 @@
 
 已有数据库如需启用“实时在线人数”、同一浏览器五分钟最多提交三次想要，以及“固定价格 / 面议 / 多少元及以下”三种价格方式，请执行 `supabase/upgrade-online-rate-limit-and-pricing.sql`。
 
+已有数据库如需启用投稿区正方形图片、发布后两分钟内编辑、自动通过标识和举报反馈，请执行 `supabase/upgrade-wall-post-tools.sql`。该升级不会删除现有投稿。
+
 网站介绍图片支持后台上传本地图片或填写 URL。后台“资源占用”页面每 15 秒更新 Supabase Storage、数据库、图片数量和合计容量；启用该页面需执行 `supabase/upgrade-resource-dashboard.sql`。
 
 添加其他管理员前，先在 Supabase **Authentication → Users** 创建并确认该邮箱账号，然后进入独立后台的“管理员管理”，输入邮箱完成授权。
@@ -104,6 +106,8 @@ http://localhost:8080
 - 商品会自动分配 5 位数字对接码；买家提交后可复制对接码并查看统一的卖方管理微信
 - Products/Categories Realtime 自动刷新
 - 响应式布局和移动端横向分类栏
+- 投稿区只填写内容；图片按 1:1 展示并可点击放大，同一浏览器发布后两分钟内可编辑
+- 投稿右侧支持举报，后台“举报反馈”可查询、标记处理和删除，并显示未读红点
 
 ## Supabase 配置
 

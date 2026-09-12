@@ -6,8 +6,8 @@
   <meta name="description" content="焦大师专闲置好物平台管理后台">
   <title>管理后台｜焦大师专闲置好物平台</title>
   <link rel="icon" type="image/webp" href="assets/images/site-mark.webp">
-  <link rel="stylesheet" href="assets/css/style.css">
-  <link rel="stylesheet" href="assets/css/admin.css">
+  <link rel="stylesheet" href="assets/css/style.css?v=5">
+  <link rel="stylesheet" href="assets/css/admin.css?v=5">
 </head>
 <body>
   <div class="admin-login-page" id="loginView">
@@ -24,7 +24,7 @@
   <div class="admin-shell" id="adminShell" hidden>
     <header class="admin-topbar"><a class="logo site-brand" href="index.html" aria-label="返回前台"><img class="site-logo" src="assets/images/site-logo.webp" alt="焦大师专 校园闲置好物" width="600" height="200"></a><div class="admin-top-actions"><a class="btn btn-ghost" href="index.html">返回前台 / 发布商品</a><button class="btn btn-ghost btn-small" id="desktopNotificationButton" type="button">🔔 开启电脑通知</button><button class="icon-btn" id="adminThemeButton" title="切换主题">🌙</button><span class="admin-account" id="adminAccount"></span><button class="btn btn-danger btn-small" id="adminPageLogout">退出</button></div></header>
     <div class="admin-layout">
-      <aside class="admin-sidebar"><button class="side-tab active" data-view="overview">📊 数据概览</button><button class="side-tab" data-view="products">📦 商品管理</button><button class="side-tab" data-view="submissions">📝 发布审核<span class="unread-badge" id="unreadSubmissionsBadge" hidden>0</span></button><button class="side-tab" data-view="campusWall">💬 投稿区审核<span class="unread-badge" id="unreadWallBadge" hidden>0</span></button><button class="side-tab" data-view="reservations">🤝 想要记录<span class="unread-badge" id="unreadReservationsBadge" hidden>0</span></button><button class="side-tab" data-view="codes">🔢 商品码查询</button><button class="side-tab" data-view="resources">🖼️ 资源占用</button><button class="side-tab" data-view="categories">🏷️ 分类管理</button><button class="side-tab" data-view="hotSearches">🔥 热搜管理</button><button class="side-tab" data-view="admins">🛡️ 管理员管理</button></aside>
+      <aside class="admin-sidebar"><button class="side-tab active" data-view="overview">📊 数据概览</button><button class="side-tab" data-view="products">📦 商品管理</button><button class="side-tab" data-view="submissions">📝 发布审核<span class="unread-badge" id="unreadSubmissionsBadge" hidden>0</span></button><button class="side-tab" data-view="campusWall">💬 投稿区审核<span class="unread-badge" id="unreadWallBadge" hidden>0</span></button><button class="side-tab" data-view="wallReports">🚩 举报反馈<span class="unread-badge" id="unreadWallReportsBadge" hidden>0</span></button><button class="side-tab" data-view="reservations">🤝 想要记录<span class="unread-badge" id="unreadReservationsBadge" hidden>0</span></button><button class="side-tab" data-view="codes">🔢 商品码查询</button><button class="side-tab" data-view="resources">🖼️ 资源占用</button><button class="side-tab" data-view="categories">🏷️ 分类管理</button><button class="side-tab" data-view="hotSearches">🔥 热搜管理</button><button class="side-tab" data-view="admins">🛡️ 管理员管理</button></aside>
       <main class="admin-main"><div class="admin-page-head"><div><h1 id="viewTitle">数据概览</h1><p id="viewDescription">查看平台实时运营数据</p></div><div class="admin-query"><input class="field" id="adminSearch" type="search" placeholder="查询当前页面…"><button class="btn btn-primary" id="adminSearchButton">查询</button></div></div><div id="adminPageContent"><div class="loading show">正在加载后台数据…</div></div></main>
     </div>
   </div>
@@ -64,6 +64,6 @@
   <div class="modal-backdrop" id="adminConfirmModal"><section class="modal" role="dialog" aria-modal="true"><div class="modal-head"><h3 class="modal-title" id="adminConfirmTitle">请再次确认</h3><button class="close-btn" id="adminConfirmClose">×</button></div><div class="modal-body"><p class="confirm-copy" id="adminConfirmText"></p><div class="reserve-actions"><button class="btn btn-ghost" id="adminConfirmCancel">取消</button><button class="btn btn-danger" id="adminConfirmAction">确认执行</button></div></div></section></div>
   <div class="toast" id="toast"><span class="toast-icon" id="toastIcon">✓</span><span id="toastText"></span></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0"></script>
-  <script src="assets/js/admin.js"></script>
+  <script src="assets/js/admin.js?v=5"></script>
 </body>
 </html>
