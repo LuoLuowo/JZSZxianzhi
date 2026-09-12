@@ -180,7 +180,7 @@ function renderWallReports(){
   if(state.wallReportError){$('adminPageContent').innerHTML='<div class="empty show"><div class="empty-icon">!</div><div class="empty-title">举报功能数据库尚未升级</div><div>请先执行 supabase/upgrade-wall-post-tools.sql</div></div>';return;}
   const labels={pending:'待处理',handled:'已处理'};
   const data=filtered(state.wallReports,item=>[item.reason,item.status,item.campus_wall_posts?.nickname,item.campus_wall_posts?.content]);
-  $('adminPageContent').innerHTML=table(['投稿内容','举报问题','状态 / 时间','操作'],data.map(item=>`<tr><td><strong>${esc(item.campus_wall_posts?.nickname||'投稿已删除')}</strong><div class="wall-admin-content">${esc(item.campus_wall_posts?.content||'原投稿已不存在')}</div>${item.campus_wall_posts?.image_url?`<img class="wall-admin-image" src="${esc(item.campus_wall_posts.image_url)}" alt="投稿图片">`:''}</td><td>${esc(item.reason)}</td><td>${labels[item.status]||item.status}<br><span class="hint">${dateText(item.created_at)}</span></td><td><div class="actions">${item.status==='pending'?`<button class="btn btn-primary btn-small" data-handle-wall-report="${item.id}">标记已处理</button>`:''}<button class="btn btn-danger btn-small" data-delete-wall-report="${item.id}">删除反馈</button></div></td></tr>`).join(''));
+  $('adminPageContent').innerHTML=table(['投稿内容','举报问题','状态 / 时间','操作'],data.map(item=>`<tr><td><strong>${esc(item.campus_wall_posts?.nickname||'投稿已删除')}</strong><div class="wall-admin-content">${esc(item.campus_wall_posts?.content||'原投稿已不存在')}</div>${item.campus_wall_posts?.image_url?`<img class="wall-admin-image" src="${esc(item.campus_wall_posts.image_url)}" alt="投稿图片">`:''}</td><td>${esc(item.reason)}</td><td>${labels[item.status]||item.status}<br><span class="hint">${dateText(item.created_at)}</span></td><td><div class="actions">${item.campus_wall_posts?`<button class="btn btn-danger btn-small" data-delete-reported-wall="${item.post_id}">处理并删除帖子</button>`:''}<button class="btn btn-ghost btn-small" data-delete-wall-report="${item.id}">删除反馈</button></div></td></tr>`).join(''));
 }
 
 function reservationTable(records,actions=true) {
@@ -337,7 +337,6 @@ async function deleteRejectedSubmission(id) {const submission=state.submissions.
 async function reviewWallPost(id,action){const {error}=await db.rpc('admin_review_campus_wall_post',{p_post_id:id,p_action:action});if(error)return toast(errorText(error),false);toast(action==='approved'?'投稿区内容已发布':'投稿区内容已拒绝');await refreshData();}
 async function setWallPinned(id,value){const {error}=await db.from('campus_wall_posts').update({is_pinned:value}).eq('id',id).eq('status','approved');if(error)return toast(errorText(error),false);toast(value?'投稿区内容已置顶':'已取消置顶');await refreshData();}
 async function deleteWallPost(id){const item=state.wallPosts.find(post=>post.id===id);const {error}=await db.from('campus_wall_posts').delete().eq('id',id);if(error)return toast(errorText(error),false);const path=storagePath(item?.image_url);if(path?.startsWith('wall-submissions/'))await db.storage.from('product-images').remove([path]);toast('投稿区内容已删除');await refreshData();}
-async function handleWallReport(id){const {error}=await db.from('campus_wall_reports').update({status:'handled',handled_at:new Date().toISOString(),handled_by:state.user.id}).eq('id',id);if(error)return toast(errorText(error),false);toast('举报反馈已标记为处理');await refreshData();}
 async function deleteWallReport(id){const {error}=await db.from('campus_wall_reports').delete().eq('id',id);if(error)return toast(errorText(error),false);toast('举报反馈已删除');await refreshData();}
 
 function bindEvents() {
@@ -372,8 +371,8 @@ function bindEvents() {
     if(wallPin){const value=wallPin.dataset.pinValue==='true';const item=state.wallPosts.find(post=>post.id===wallPin.dataset.pinWall);return askConfirm(value?'置顶投稿区内容':'取消内容置顶',`确定${value?'置顶':'取消置顶'}“${item?.title||'该投稿'}”吗？`,value?'确认置顶':'取消置顶',()=>setWallPinned(wallPin.dataset.pinWall,value),value);}
     const wallDelete=target.closest('[data-delete-wall]');
     if(wallDelete){const item=state.wallPosts.find(post=>post.id===wallDelete.dataset.deleteWall);return askConfirm('删除投稿区内容',`确定永久删除“${item?.title||'该投稿'}”吗？图片也会一并清理，此操作无法恢复。`,'永久删除',()=>deleteWallPost(wallDelete.dataset.deleteWall));}
-    const handleReport=target.closest('[data-handle-wall-report]');
-    if(handleReport)return askConfirm('确认处理举报','确定已核实并处理这条举报反馈吗？','标记已处理',()=>handleWallReport(handleReport.dataset.handleWallReport),true);
+    const deleteReportedWall=target.closest('[data-delete-reported-wall]');
+    if(deleteReportedWall){const item=state.wallPosts.find(post=>post.id===deleteReportedWall.dataset.deleteReportedWall);return askConfirm('处理举报并删除帖子',`确定删除这条被举报的投稿吗？${item?.image_url?'投稿图片也会一并清理。':''}关联举报会同步移除，此操作无法恢复。`,'删除帖子',()=>deleteWallPost(deleteReportedWall.dataset.deleteReportedWall));}
     const deleteReport=target.closest('[data-delete-wall-report]');
     if(deleteReport)return askConfirm('删除举报反馈','确定永久删除这条举报反馈吗？此操作无法恢复。','永久删除',()=>deleteWallReport(deleteReport.dataset.deleteWallReport));
     if(target.dataset.productStatus){const product=state.products.find(p=>p.id===target.dataset.id);const label={sold:'标记售罄',removed:'下架',available:'重新上架'}[target.dataset.productStatus];return askConfirm('确认商品操作',`确定要将“${product?.title||'该商品'}”${label}吗？`,label,()=>setProductStatus(target.dataset.id,target.dataset.productStatus),target.dataset.productStatus==='available');}
