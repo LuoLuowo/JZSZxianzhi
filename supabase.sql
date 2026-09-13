@@ -3,6 +3,7 @@
 -- 请在 Supabase Dashboard -> SQL Editor 中完整执行。
 
 create extension if not exists pgcrypto;
+create extension if not exists pg_cron;
 
 -- 1. 清理旧版对象
 drop view if exists public.product_feed cascade;
@@ -35,6 +36,8 @@ drop function if exists public.update_own_campus_wall_post(uuid,text,uuid) casca
 drop function if exists public.submit_campus_wall_report(uuid,text,uuid) cascade;
 drop function if exists public.admin_review_campus_wall_post(uuid,text) cascade;
 drop function if exists public.create_campus_wall_notification() cascade;
+drop function if exists public.track_product_sold_at() cascade;
+drop function if exists public.cleanup_expired_sold_products() cascade;
 drop table if exists public.reservations cascade;
 drop table if exists public.reservation_rate_limits cascade;
 drop table if exists public.submission_rate_limits cascade;
@@ -133,6 +136,7 @@ create table public.products (
   quantity integer not null default 1 check (quantity >= 1 and quantity <= 9999),
   sold_quantity integer not null default 0 check (sold_quantity >= 0 and sold_quantity <= quantity),
   status text not null default 'available' check (status in ('available','sold','removed')),
+  sold_at timestamptz,
   image_url text,
   seller_contact text,
   is_pinned boolean not null default false,
@@ -182,6 +186,46 @@ create trigger products_assign_code before insert or update on public.products
 for each row execute function public.assign_product_code();
 revoke all on function public.issue_product_code(uuid,text) from public;
 revoke all on function public.assign_product_code() from public;
+
+create index products_sold_cleanup_idx on public.products(status, sold_at);
+
+create or replace function public.track_product_sold_at()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.status = 'sold' then
+    if tg_op = 'INSERT' or old.status is distinct from 'sold' or old.sold_at is null then new.sold_at := now(); end if;
+  else
+    new.sold_at := null;
+  end if;
+  return new;
+end;
+$$;
+create trigger products_track_sold_at before insert or update of status on public.products
+for each row execute function public.track_product_sold_at();
+
+create or replace function public.cleanup_expired_sold_products()
+returns integer
+language plpgsql
+security definer
+set search_path = public, storage, pg_temp
+as $$
+declare v_product record; v_storage_path text; v_deleted integer := 0;
+begin
+  for v_product in select id,image_url from public.products where status='sold' and sold_at <= now() - interval '7 days' loop
+    v_storage_path := substring(v_product.image_url from '/storage/v1/object/public/product-images/(.*)$');
+    if v_storage_path is not null and v_storage_path <> '' then
+      delete from storage.objects where bucket_id='product-images' and name=v_storage_path;
+    end if;
+    delete from public.products where id=v_product.id;
+    v_deleted := v_deleted + 1;
+  end loop;
+  return v_deleted;
+end;
+$$;
+revoke all on function public.cleanup_expired_sold_products() from public;
 
 create table public.reservations (
   id uuid primary key default gen_random_uuid(),
@@ -947,5 +991,15 @@ begin
 end $$;
 
 -- 12. 创建管理员
+-- 已售罄商品每天凌晨 03:17 自动清理；商品码台账不会被清理，因此商品码不可复用。
+do $$
+declare v_job_id bigint;
+begin
+  select jobid into v_job_id from cron.job where jobname='delete-sold-products-after-seven-days' limit 1;
+  if v_job_id is not null then perform cron.unschedule(v_job_id); end if;
+  perform cron.schedule('delete-sold-products-after-seven-days','17 3 * * *','select public.cleanup_expired_sold_products();');
+end;
+$$;
+
 -- 先在 Supabase Dashboard -> Authentication -> Users 中创建一个邮箱用户，
 -- 再执行 supabase/set-admin.sql；该文件已预填 sh770419@163.com。

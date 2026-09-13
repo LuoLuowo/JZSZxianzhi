@@ -371,9 +371,10 @@ function sanitizeIntroductionHtml(value) {
 }
 
 function renderCategories() {
+  const categoryLocked=state.listMode==='recommended';
   $('categoryList').innerHTML = `<button class="category-tag ${state.categoryId==='all'?'active':''}" data-category="all">全部</button>` +
     state.categories.filter(c => c.is_active || state.admin).map(c =>
-      `<button class="category-tag ${String(c.id)===String(state.categoryId)?'active':''}" data-category="${c.id}">${escapeHtml(c.icon)} ${escapeHtml(c.name)}</button>`
+      `<button class="category-tag ${String(c.id)===String(state.categoryId)?'active':''}" data-category="${c.id}" ${categoryLocked?'disabled title="推荐闲置不参与分类筛选"':''}>${escapeHtml(c.icon)} ${escapeHtml(c.name)}</button>`
     ).join('');
   requestAnimationFrame(updateCategoryScrollHint);
 }
@@ -400,7 +401,8 @@ async function loadProducts() {
   $('emptyState').classList.remove('show');
   let query = state.client.from('product_feed').select('*',{count:'exact'});
   if(state.listMode==='recommended')query=query.eq('is_recommended',true);
-  if (state.categoryId !== 'all') query = query.eq('category_id', Number(state.categoryId));
+  // 推荐闲置独立展示，不受分类标签筛选影响。
+  if (state.listMode==='latest' && state.categoryId !== 'all') query = query.eq('category_id', Number(state.categoryId));
   const term = state.search.replace(/[%_,().]/g,' ').trim();
   if (term) query = query.or(`title.ilike.%${term}%,description.ilike.%${term}%,category_name.ilike.%${term}%,campus.ilike.%${term}%`);
   if(state.minPrice!==null)query=query.gte('price',state.minPrice);
@@ -588,7 +590,7 @@ function clearAllFilters() {
 
 function updateListModeButtons(){const products=state.homeView==='products',recommended=products&&state.listMode==='recommended',latest=products&&state.listMode==='latest',wall=state.homeView==='wall';$('recommendedProductsButton').classList.toggle('active',recommended);$('recommendedProductsButton').setAttribute('aria-selected',String(recommended));$('latestProductsButton').classList.toggle('active',latest);$('latestProductsButton').setAttribute('aria-selected',String(latest));$('campusWallButton').classList.toggle('active',wall);$('campusWallButton').setAttribute('aria-selected',String(wall));}
 function renderHomeView(){const wall=state.homeView==='wall';$('productListView').hidden=wall;$('campusWallView').hidden=!wall;$('resultCount').textContent=wall?`共 ${state.totalWallPosts} 条校园动态`:`${state.listMode==='recommended'?'推荐 ':''}共 ${state.totalProducts} 件闲置`;}
-function setListMode(mode){state.homeView='products';const changed=state.listMode!==mode;state.listMode=mode;if(changed)state.page=1;renderHomeView();updateListModeButtons();loadProducts();}
+function setListMode(mode){state.homeView='products';const changed=state.listMode!==mode;state.listMode=mode;if(mode==='recommended')state.categoryId='all';if(changed)state.page=1;renderHomeView();renderCategories();updateListModeButtons();loadProducts();}
 function openCampusWall(){state.homeView='wall';renderHomeView();updateListModeButtons();if(!state.wallLoaded)loadWallPosts();}
 
 function resetHome(event) {
@@ -675,14 +677,13 @@ function closeReserve() {
 async function submitReservation(event) {
   event.preventDefault();
   if (!state.reserveProduct || !requireBackend()) return;
-  const name = $('buyerName').value.trim();
   const contact = $('buyerContact').value.trim();
   const button = $('reserveSubmit');
   $('reserveError').textContent = '';
   busy(button,true,'提交中…');
   const { data, error } = await state.client.rpc('reserve_product',{
     p_product_id:state.reserveProduct.id,
-    p_buyer_name:name,
+    p_buyer_name:'匿名用户',
     p_contact:contact,
     p_note:'',
     p_client_id:browserClientId()
@@ -710,6 +711,25 @@ function openImageLightbox(url,title='商品图片') {
   $('zoomImage').alt=title;
   $('zoomImageTitle').textContent=title;
   openModal('imageLightbox');
+}
+
+let filePickerLoadingTimer;
+function showFilePickerLoading(){
+  const overlay=$('filePickerLoading');
+  if(!overlay)return;
+  clearTimeout(filePickerLoadingTimer);
+  overlay.classList.add('open');
+  // 原生相册会接管屏幕；短暂提示后自动关闭，避免取消选择时遮罩残留。
+  filePickerLoadingTimer=setTimeout(hideFilePickerLoading,900);
+}
+function hideFilePickerLoading(){clearTimeout(filePickerLoadingTimer);$('filePickerLoading')?.classList.remove('open');}
+function bindUserImagePicker(id){
+  const input=$(id);
+  if(!input)return;
+  input.addEventListener('pointerdown',showFilePickerLoading);
+  input.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' ')showFilePickerLoading();});
+  input.addEventListener('change',hideFilePickerLoading);
+  input.addEventListener('cancel',hideFilePickerLoading);
 }
 
 async function copyExchangeWechat() {
@@ -1186,6 +1206,9 @@ function bindEvents() {
   $('copyExchangeWechat').addEventListener('click',copyExchangeWechat);
   $('openWallSubmission').addEventListener('click',openWallSubmissionForm);
   $('wallSubmissionForm').addEventListener('submit',submitWallPost);
+  bindUserImagePicker('submissionImage');
+  bindUserImagePicker('wallImage');
+  window.addEventListener('focus',()=>setTimeout(hideFilePickerLoading,180));
   $('wallReportForm').addEventListener('submit',submitWallReport);
   $('wallEditForm').addEventListener('submit',submitWallEdit);
   $('wallFeed').addEventListener('click',event=>{const image=event.target.closest('[data-wall-image]');if(image)return openImageLightbox(image.dataset.wallImage,'投稿图片');const report=event.target.closest('[data-report-wall]');if(report)return openWallReport(state.wallPosts.find(post=>post.id===report.dataset.reportWall));const edit=event.target.closest('[data-edit-wall]');if(edit)return openWallEditor(state.wallPosts.find(post=>post.id===edit.dataset.editWall));});
@@ -1206,7 +1229,7 @@ function bindEvents() {
   document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.addEventListener('click',event => { if(event.target===backdrop && backdrop.id!=='productModal'){if(backdrop.id==='confirmModal')state.pendingConfirm=null;closeModal(backdrop.id);} }));
   $('categoryList').addEventListener('click',event => {
     const button = event.target.closest('[data-category]');
-    if (!button) return;
+    if (!button || button.disabled) return;
     state.categoryId = button.dataset.category;
     state.homeView='products';
     state.page = 1;
@@ -1283,7 +1306,7 @@ async function init() {
   }
   state.client = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
   window.supabaseClient = state.client;
-  if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js?v=7').catch(()=>{}),{once:true});
+  if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js?v=8').catch(()=>{}),{once:true});
   // 每个浏览器标识仅会在数据库中写入一次；失败不影响正常浏览商品。
   Promise.resolve(state.client.rpc('track_site_visitor',{p_client_id:browserClientId()})).catch(()=>{});
   subscribePresence();
