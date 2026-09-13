@@ -713,32 +713,6 @@ function openImageLightbox(url,title='商品图片') {
   openModal('imageLightbox');
 }
 
-let filePickerLoadingTimer;
-function showFilePickerLoading(){
-  const overlay=$('filePickerLoading');
-  if(!overlay)return;
-  overlay.classList.add('open');
-}
-function hideFilePickerLoading(){
-  clearTimeout(filePickerLoadingTimer);
-  filePickerLoadingTimer=null;
-  $('filePickerLoading')?.classList.remove('open');
-}
-function bindUserImagePicker(id){
-  const input=$(id);
-  if(!input)return;
-  const scheduleLoading=()=>{
-    // 不在按下时盖住 input，避免遮罩抢走原生相册的点击。
-    // 原生相册快速弹出时会触发 blur/hidden，所以用户不会看到加载层。
-    hideFilePickerLoading();
-    filePickerLoadingTimer=setTimeout(showFilePickerLoading,320);
-  };
-  input.addEventListener('click',scheduleLoading);
-  input.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' ')scheduleLoading();});
-  input.addEventListener('change',hideFilePickerLoading);
-  input.addEventListener('cancel',hideFilePickerLoading);
-}
-
 async function copyExchangeWechat() {
   const contact = $('exchangeWechat').textContent.trim();
   if (!contact || contact.startsWith('对方暂未填写')) return toast('对方暂未填写交换微信',false);
@@ -1213,11 +1187,6 @@ function bindEvents() {
   $('copyExchangeWechat').addEventListener('click',copyExchangeWechat);
   $('openWallSubmission').addEventListener('click',openWallSubmissionForm);
   $('wallSubmissionForm').addEventListener('submit',submitWallPost);
-  bindUserImagePicker('submissionImage');
-  bindUserImagePicker('wallImage');
-  window.addEventListener('blur',hideFilePickerLoading);
-  window.addEventListener('focus',hideFilePickerLoading);
-  document.addEventListener('visibilitychange',()=>{if(document.hidden)hideFilePickerLoading();});
   $('wallReportForm').addEventListener('submit',submitWallReport);
   $('wallEditForm').addEventListener('submit',submitWallEdit);
   $('wallFeed').addEventListener('click',event=>{const image=event.target.closest('[data-wall-image]');if(image)return openImageLightbox(image.dataset.wallImage,'投稿图片');const report=event.target.closest('[data-report-wall]');if(report)return openWallReport(state.wallPosts.find(post=>post.id===report.dataset.reportWall));const edit=event.target.closest('[data-edit-wall]');if(edit)return openWallEditor(state.wallPosts.find(post=>post.id===edit.dataset.editWall));});
@@ -1315,7 +1284,7 @@ async function init() {
   }
   state.client = window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
   window.supabaseClient = state.client;
-  if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js?v=9').catch(()=>{}),{once:true});
+  if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js?v=10').catch(()=>{}),{once:true});
   // 每个浏览器标识仅会在数据库中写入一次；失败不影响正常浏览商品。
   Promise.resolve(state.client.rpc('track_site_visitor',{p_client_id:browserClientId()})).catch(()=>{});
   subscribePresence();
